@@ -14,6 +14,7 @@
 #include "bluetooth_callbacks.h"
 #include "crypto_manager.h"
 #include <json-c/json.h>
+#include "base64.h"
 
 // Link with Bthprops.lib, BluetoothAPIs.lib, Setupapi.lib
 #pragma comment(lib, "Bthprops.lib")
@@ -182,14 +183,18 @@ VOID CALLBACK CharacteristicChangedCallback(
 
                     transferState->file_handle = fopen(transferState->file_path, "wb");
                     if (!transferState->file_handle) {
-                        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error: Could not open file %s for writing: %s", transferState->file_path, strerror(errno)].UTF8String);
+                        char alert_msg[256];
+                        snprintf(alert_msg, sizeof(alert_msg), "Error: Could not open file %s for writing: %s", transferState->file_path, strerror(errno));
+                        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                         free(transferState);
                         json_object_put(jobj);
                         return;
                     }
                     ongoingFileTransfers[device_address] = transferState;
                     if (g_bluetooth_ui_callbacks.add_file_transfer_item) g_bluetooth_ui_callbacks.add_file_transfer_item(device_address.c_str(), transferState->file_name, false);
-                    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Receiving file '%s' (size: %ld) from %s.", filename, file_size, device_address.c_str()].UTF8String);
+                    char alert_msg[256];
+                    snprintf(alert_msg, sizeof(alert_msg), "Receiving file '%s' (size: %ld) from %s.", filename, file_size, device_address.c_str());
+                    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                     json_object_put(jobj);
                 } else {
                     // This is a data chunk
@@ -210,7 +215,9 @@ VOID CALLBACK CharacteristicChangedCallback(
                         if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(device_address.c_str(), transferState->file_name, (double)transferState->bytes_transferred / transferState->file_size);
 
                         if (transferState->bytes_transferred >= transferState->file_size) {
-                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' received completely.", transferState->file_name].UTF8String);
+                            char alert_msg[256];
+                            snprintf(alert_msg, sizeof(alert_msg), "File '%s' received completely.", transferState->file_name);
+                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                             fclose(transferState->file_handle);
                             free(transferState);
                             ongoingFileTransfers.erase(device_address);
@@ -318,8 +325,40 @@ static void windows_discoverDevices(void) {
 }
 
 static bool windows_pairDevice(const char* device_address) {
-    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Windows: Pairing (placeholder).");
-    return true;
+    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Windows: Attempting to pair...");
+
+    BLUETOOTH_DEVICE_INFO_STRUCT btdi;
+    ZeroMemory(&btdi, sizeof(BLUETOOTH_DEVICE_INFO_STRUCT));
+    btdi.dwSize = sizeof(BLUETOOTH_DEVICE_INFO_STRUCT);
+
+    // Convert device_address string to BTH_ADDR
+    BTH_ADDR bthAddr = 0;
+    sscanf(device_address, "%llx", &bthAddr); // Assuming device_address is in hex format
+
+    btdi.Address.ullLong = bthAddr;
+
+    // Find the device info
+    HBLUETOOTH_DEVICE_FIND hDeviceFind = BluetoothFindFirstDevice(&btdi, 0);
+    if (hDeviceFind != NULL) {
+        BluetoothFindDeviceClose(hDeviceFind);
+
+        // Attempt to authenticate/pair
+        DWORD result = BluetoothAuthenticateDeviceEx(NULL, NULL, &btdi, NULL, BLUETOOTH_AUTHENTICATION_METHOD_LEGACY, NULL);
+
+        if (result == ERROR_SUCCESS) {
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Windows: Pairing successful.");
+            return true;
+        } else if (result == ERROR_CANCELLED) {
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Windows: Pairing cancelled by user.");
+        } else {
+            char alert_msg[256];
+            snprintf(alert_msg, sizeof(alert_msg), "Windows: Pairing failed with error: %lu", result);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", alert_msg);
+        }
+    } else {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Windows: Device not found for pairing.");
+    }
+    return false;
 }
 
 static bool windows_connect(const char* device_address) {
@@ -588,7 +627,9 @@ static void send_next_file_chunk(const std::string& device_address, FileTransfer
             transferState->file_handle = NULL;
         }
         if (transferState) {
-            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' sent completely.", transferState->file_name].UTF8String);
+            char alert_msg[256];
+            snprintf(alert_msg, sizeof(alert_msg), "File '%s' sent completely.", transferState->file_name);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
             if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(transferState->device_address.c_str(), transferState->file_name);
             free(transferState);
             ongoingFileTransfers.erase(device_address);
@@ -623,7 +664,9 @@ static void send_next_file_chunk(const std::string& device_address, FileTransfer
                                                              &charValue,
                                                              0);
             if (S_OK != hr) {
-                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Failed to write file chunk: 0x%lx", hr].UTF8String);
+                char alert_msg[256];
+                snprintf(alert_msg, sizeof(alert_msg), "Failed to write file chunk: 0x%lx", hr);
+                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                 // TODO: Handle write error
             } else {
                 transferState->bytes_transferred += bytes_read;
@@ -633,14 +676,20 @@ static void send_next_file_chunk(const std::string& device_address, FileTransfer
                 send_next_file_chunk(device_address, transferState);
             }
         } else {
-            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error encrypting file chunk for '%s'.", transferState->file_name].UTF8String);
+            char alert_msg[256];
+            snprintf(alert_msg, sizeof(alert_msg), "Error encrypting file chunk for '%s'.", transferState->file_name);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
             // TODO: Handle encryption error
         }
     } else if (ferror(transferState->file_handle)) {
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error reading file '%s': %s", transferState->file_name, strerror(errno)].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Error reading file '%s': %s", transferState->file_name, strerror(errno));
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
         // TODO: Handle file read error
     } else { // EOF reached, and all bytes sent
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' sent completely.", transferState->file_name].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "File '%s' sent completely.", transferState->file_name);
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
         fclose(transferState->file_handle);
         transferState->file_handle = NULL;
         free(transferState);
@@ -672,7 +721,9 @@ static bool windows_sendFile(const char* device_address, const char* file_path) 
 
     FILE *file = fopen(file_path, "rb");
     if (!file) {
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error: Could not open file %s for reading: %s", file_path, strerror(errno)].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Error: Could not open file %s for reading: %s", file_path, strerror(errno));
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
         return false;
     }
 
@@ -681,7 +732,9 @@ static bool windows_sendFile(const char* device_address, const char* file_path) 
     fseek(file, 0, SEEK_SET);
 
     if (file_size == -1) {
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error: Could not get file size for %s: %s", file_path, strerror(errno)].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Error: Could not get file size for %s: %s", file_path, strerror(errno));
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
         fclose(file);
         return false;
     }
@@ -720,11 +773,9 @@ static bool windows_sendFile(const char* device_address, const char* file_path) 
     json_object *jobj = json_object_new_object();
     json_object_object_add(jobj, "filename", json_object_new_string(transferState->file_name));
     json_object_object_add(jobj, "size", json_object_new_int64(file_size));
-    // Base64 encode the key for JSON. This requires a base64 encode function.
-    // For simplicity, I'll just copy the key bytes directly for now.
-    // In a real project, you'd use a library like libb64 or implement it.
-    // For now, I'll assume the key is directly passed as a string.
-    json_object_object_add(jobj, "key", json_object_new_string((const char*)transferState->encryption_key));
+    char* encoded_key = base64_encode(transferState->encryption_key, sizeof(transferState->encryption_key));
+    json_object_object_add(jobj, "key", json_object_new_string(encoded_key));
+    free(encoded_key); // Free the allocated base64 string
 
     const char *metadata_json_str = json_object_to_json_string(jobj);
     size_t metadata_len = strlen(metadata_json_str);
@@ -755,7 +806,9 @@ static bool windows_sendFile(const char* device_address, const char* file_path) 
                                                      &charValue,
                                                      0);
     if (S_OK != hr) {
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Failed to write metadata: 0x%lx", hr].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to write metadata: 0x%lx", hr);
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
         fclose(file);
         free(transferState);
         ongoingFileTransfers.erase(device_address);
@@ -765,7 +818,9 @@ static bool windows_sendFile(const char* device_address, const char* file_path) 
 
     transferState->current_chunk_index++; // Increment for the next data chunk
 
-    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Sent file metadata for '%s'. Size: %ld. Starting data transfer...", file_path, file_size].UTF8String);
+    char alert_msg[256];
+    snprintf(alert_msg, sizeof(alert_msg), "Sent file metadata for '%s'. Size: %ld. Starting data transfer...", file_path, file_size);
+    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
 
     // Start sending data chunks immediately
     send_next_file_chunk(device_address, transferState);
@@ -779,17 +834,27 @@ static bool windows_receiveFile(const char* device_address, const char* destinat
     return true;
 }
 
-static IBluetoothManager windows_manager = {
-    .discoverDevices = windows_discoverDevices,
-    .pairDevice = windows_pairDevice,
-    .connect = windows_connect,
-    .disconnect = windows_disconnect,
-    .sendMessage = windows_sendMessage,
-    .receiveMessage = windows_receiveMessage,
-    .sendFile = windows_sendFile,
-    .receiveFile = windows_receiveFile
-};
-
-IBluetoothManager* get_windows_bluetooth_manager(void) {
-    return &windows_manager;
+void WindowsBluetoothManager::discoverDevices() {
+    windows_discoverDevices();
 }
+
+bool WindowsBluetoothManager::pairDevice(const std::string& address) {
+    return windows_pairDevice(address.c_str());
+}
+
+bool WindowsBluetoothManager::connect(const std::string& address) {
+    return windows_connect(address.c_str());
+}
+
+void WindowsBluetoothManager::disconnect(const std::string& address) {
+    windows_disconnect(address.c_str());
+}
+
+bool WindowsBluetoothManager::sendMessage(const std::string& address, const std::string& message) {
+    return windows_sendMessage(address.c_str(), message.c_str());
+}
+
+bool WindowsBluetoothManager::sendFile(const std::string& address, const std::string& filePath) {
+    return windows_sendFile(address.c_str(), filePath.c_str());
+}
+

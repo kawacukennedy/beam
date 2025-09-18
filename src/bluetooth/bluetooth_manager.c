@@ -14,6 +14,9 @@
 #include "bluetooth_linux.h"
 #endif
 
+// Define the global UI callbacks structure
+BluetoothUICallbacks g_bluetooth_ui_callbacks; // Definition added here
+
 // Declare dummy functions before they are used in the struct
 static void dummy_discoverDevices(void);
 static bool dummy_pairDevice(const char* device_address);

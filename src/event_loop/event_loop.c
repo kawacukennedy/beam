@@ -45,27 +45,7 @@ void event_loop_post_event(void (*callback)(void*), void* data) {
 #include <windows.h>
 
 static bool running = false;
-
-void event_loop_init(void) {
-    printf("Event Loop initialized (Windows).\n");
-}
-
-void event_loop_run(void) {
-    printf("Event Loop running (Windows Message Pump)...");
-    running = true;
-    MSG msg;
-    while (running && GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-    printf("Event Loop stopped (Windows).\n");
-}
-
-void event_loop_stop(void) {
-    printf("Event Loop stop requested (Windows).\n");
-    running = false;
-    PostQuitMessage(0); // Posts a WM_QUIT message to the thread's message queue
-}
+static HWND eventLoopWindow = NULL; // Handle to the hidden window
 
 // Custom message for posting callbacks
 #define WM_USER_CALLBACK (WM_USER + 1)
@@ -89,17 +69,67 @@ LRESULT CALLBACK EventLoopWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lP
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-void event_loop_post_event(void (*callback)(void*), void* data) {
-    // In a real application, you'd create a hidden window to receive messages
-    // For simplicity, we'll assume a main window handle is available or create one.
-    // This is a simplified approach and might need refinement for robust multi-threading.
-    // For now, we'll just call the callback directly if the loop is running.
-    // A more robust solution would involve creating a hidden window and posting a message to it.
-    fprintf(stderr, "Warning: Windows event_loop_post_event is a dummy. Implement hidden window for robustness.\n");
-    if (running && callback) {
-        callback(data);
+void event_loop_init(void) {
+    printf("Event Loop initialized (Windows).\n");
+
+    // Register a window class for the hidden window
+    WNDCLASSEX wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.lpfnWndProc = EventLoopWndProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = "EventLoopWindowClass";
+
+    if (!RegisterClassEx(&wc)) {
+        fprintf(stderr, "Failed to register EventLoopWindowClass: %lu\n", GetLastError());
+        return;
+    }
+
+    // Create the hidden window
+    eventLoopWindow = CreateWindowEx(
+        0, "EventLoopWindowClass", "", WS_OVERLAPPEDWINDOW, // Use WS_OVERLAPPEDWINDOW for simplicity, can be 0 for hidden
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        HWND_MESSAGE, // Message-only window
+        NULL, GetModuleHandle(NULL), NULL);
+
+    if (!eventLoopWindow) {
+        fprintf(stderr, "Failed to create event loop window: %lu\n", GetLastError());
     }
 }
+
+void event_loop_run(void) {
+    printf("Event Loop running (Windows Message Pump)...");
+    running = true;
+    MSG msg;
+    while (running && GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+    printf("Event Loop stopped (Windows).\n");
+}
+
+void event_loop_stop(void) {
+    printf("Event Loop stop requested (Windows).\n");
+    running = false;
+    if (eventLoopWindow) {
+        PostMessage(eventLoopWindow, WM_QUIT, 0, 0); // Post WM_QUIT to the hidden window
+    }
+}
+
+void event_loop_post_event(void (*callback)(void*), void* data) {
+    if (eventLoopWindow) {
+        CallbackData* cbData = (CallbackData*)malloc(sizeof(CallbackData));
+        if (!cbData) {
+            fprintf(stderr, "Failed to allocate CallbackData for event.\n");
+            return;
+        }
+        cbData->callback = callback;
+        cbData->data = data;
+        PostMessage(eventLoopWindow, WM_USER_CALLBACK, 0, (LPARAM)cbData);
+    } else {
+        fprintf(stderr, "Error: Windows Event Loop window not created, cannot post event.\n");
+    }
+}
+
 
 #elif __linux__
 #include <glib.h>

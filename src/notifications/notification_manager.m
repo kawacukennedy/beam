@@ -5,75 +5,123 @@
 #import <Foundation/Foundation.h>
 #import <UserNotifications/UserNotifications.h>
 
-// Delegate for NSUserNotificationCenter (optional, for handling responses)
-@interface NotificationDelegate : NSObject <NSUserNotificationCenterDelegate>
+// Delegate for UNUserNotificationCenter
+@interface UserNotificationDelegate : NSObject <UNUserNotificationCenterDelegate>
 @end
 
-@implementation NotificationDelegate
+@implementation UserNotificationDelegate
 
-// Called when a notification is delivered to a user
-- (void)userNotificationCenter:(NSUserNotificationCenter *)center didDeliverNotification:(NSUserNotification *)notification {
-    NSLog(@"Notification delivered: %@", notification.title);
+// Called when a notification is delivered to a foreground app
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+       willPresentNotification:(UNNotification *)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions options))completionHandler {
+    NSLog(@"Notification delivered (foreground): %@", notification.request.content.title);
+    completionHandler(UNNotificationPresentationOptionAlert + UNNotificationPresentationOptionSound);
 }
 
-// Called when a user clicks on a notification
-- (void)userNotificationCenter:(NSUserNotificationCenter *)center didActivateNotification:(NSUserNotification *)notification {
-    NSLog(@"Notification activated: %@", notification.title);
+// Called when the user interacts with a notification
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+    didReceiveNotificationResponse:(UNNotificationResponse *)response
+             withCompletionHandler:(void (^)(void))completionHandler {
+    NSLog(@"Notification activated: %@", response.notification.request.content.title);
     // Handle user interaction, e.g., open the app, navigate to a specific chat
-}
-
-// Called to determine if a notification should be shown even if the app is frontmost
-- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification {
-    return YES;
+    completionHandler();
 }
 
 @end
 
-static NotificationDelegate *delegate = nil;
+static UserNotificationDelegate *delegate = nil;
 
 void notification_manager_init(void) {
-    NSLog(@"Notification Manager initialized (macOS).");
+    NSLog(@"Notification Manager initialized (macOS - UserNotifications.framework).");
+    // Request authorization for notifications
+    [[UNUserNotificationCenter currentNotificationCenter] requestAuthorizationWithOptions:UNAuthorizationOptionAlert + UNAuthorizationOptionSound + UNAuthorizationOptionBadge
+                                                                       completionHandler:^(BOOL granted, NSError *_Nullable error) {
+        if (granted) {
+            NSLog(@"Notification authorization granted.");
+        } else {
+            NSLog(@"Notification authorization denied: %@", error.localizedDescription);
+        }
+    }];
+
     // Set up a delegate to handle notification interactions
     if (!delegate) {
-        delegate = [[NotificationDelegate alloc] init];
+        delegate = [[UserNotificationDelegate alloc] init];
     }
-    [NSUserNotificationCenter defaultUserNotificationCenter].delegate = delegate;
+    [UNUserNotificationCenter currentNotificationCenter].delegate = delegate;
 }
 
 bool notification_manager_show(NotificationType type, const char* title, const char* message, const char* sound_name) {
     @autoreleasepool {
-        NSUserNotification *notification = [[NSUserNotification alloc] init];
-        notification.title = [NSString stringWithUTF8String:title];
-        notification.informativeText = [NSString stringWithUTF8String:message];
+        UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+        content.title = [NSString stringWithUTF8String:title];
+        content.body = [NSString stringWithUTF8String:message];
         
         if (sound_name && strlen(sound_name) > 0) {
-            notification.soundName = [NSString stringWithUTF8String:sound_name];
+            content.sound = [UNNotificationSound soundNamed:[NSString stringWithUTF8String:sound_name]];
         } else {
-            notification.soundName = NSUserNotificationDefaultSoundName;
+            content.sound = UNNotificationSound.defaultSound;
         }
 
-        // Deliver the notification
-        [[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notification];
-        [notification release]; // Release the notification object
+        // Create a unique request identifier
+        NSString *requestIdentifier = [NSString stringWithFormat:@"BlueBeamNative.notification.%f", [[NSDate date] timeIntervalSince1970]];
+
+        UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:requestIdentifier
+                                                                              content:content trigger:nil]; // nil trigger for immediate delivery
+
+        // Schedule the notification
+        [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request withCompletionHandler:^(NSError *_Nullable error) {
+            if (error) {
+                NSLog(@"Error scheduling notification: %@", error.localizedDescription);
+            } else {
+                NSLog(@"Notification scheduled successfully.");
+            }
+        }];
+        
+        [content release];
+        [request release];
         return true;
     }
 }
 
 #elif _WIN32
 #include <windows.h>
+#include <winrt/Windows.UI.Notifications.h>
+#include <winrt/Windows.Data.Xml.Dom.h>
+
+// For Toast notifications, typically requires a Desktop Bridge or packaging
+// This is a simplified placeholder and won't work without proper WinRT setup and app packaging.
+// For a full implementation, refer to Microsoft's documentation on WinUI 3 Toast Notifications.
 
 void notification_manager_init(void) {
-    printf("Notification Manager initialized (Windows - placeholder).\n");
+    printf("Notification Manager initialized (Windows - WinUI Toast placeholder).\n");
+    // In a real WinUI 3 app, activation and COM initialization would happen here.
 }
 
 bool notification_manager_show(NotificationType type, const char* title, const char* message, const char* sound_name) {
-    printf("Showing notification (Windows - placeholder): Type=%d, Title='%s', Message='%s', Sound='%s'\n",
+    printf("Showing notification (Windows - WinUI Toast placeholder): Type=%d, Title='%s', Message='%s', Sound='%s'\n",
            type, title, message, sound_name ? sound_name : "default");
-    // TODO: Implement WinUI Toast notifications. This is complex and requires C++/WinRT.
-    // For now, a simple MessageBox can be used for testing, but it's not a toast notification.
-    // MessageBox(NULL, message, title, MB_OK | MB_ICONINFORMATION);
+
+    // Fallback to MessageBox for demonstration/testing without full WinRT setup
+    MessageBoxA(NULL, message, title, MB_OK | MB_ICONINFORMATION);
+
+    // Example of how WinRT Toast notification might be structured (conceptual)
+    /*
+    using namespace winrt::Windows::UI::Notifications;
+    using namespace winrt::Windows::Data::Xml::Dom;
+
+    ToastNotifier notifier = ToastNotificationManager::CreateToastNotifier();
+
+    XmlDocument toastXml;
+    toastXml.LoadXml(L"<toast><visual><binding template=\"ToastGeneric\"><text>" + winrt::to_hstring(title) + L"</text><text>" + winrt::to_hstring(message) + L"</text></binding></visual></toast>");
+
+    ToastNotification toast{toastXml};
+    notifier.Show(toast);
+    */
+
     return true;
 }
+
 
 #elif __linux__
 #include <libnotify/notify.h>

@@ -71,45 +71,45 @@ bool db_create_tables(void) {
         return false;
     }
 
-    const char *create_devices_table = 
-        "CREATE TABLE IF NOT EXISTS devices (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        address TEXT UNIQUE NOT NULL,
-        trusted INTEGER DEFAULT 0,
-        last_seen INTEGER,
-        icon_path TEXT,
-        paired BOOLEAN DEFAULT FALSE
-        )";
+    const char *create_devices_table =
+        "CREATE TABLE IF NOT EXISTS devices (\n"
+        "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+        "    name TEXT NOT NULL,\n"
+        "    address TEXT UNIQUE NOT NULL,\n"
+        "    trusted INTEGER DEFAULT 0,\n"
+        "    last_seen INTEGER,\n"
+        "    icon_path TEXT,\n"
+        "    paired BOOLEAN DEFAULT FALSE\n"
+        ";";
 
-    const char *create_messages_table = 
-        "CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        device_id INTEGER NOT NULL,
-        timestamp INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        type TEXT NOT NULL,
-        status INTEGER NOT NULL,
-        encrypted BOOLEAN DEFAULT FALSE,
-        read BOOLEAN DEFAULT FALSE,
-        FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
-        )";
+    const char *create_messages_table =
+        "CREATE TABLE IF NOT EXISTS messages (\n"
+        "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+        "    device_id INTEGER NOT NULL,\n"
+        "    timestamp INTEGER NOT NULL,\n"
+        "    content TEXT NOT NULL,\n"
+        "    type TEXT NOT NULL,\n"
+        "    status INTEGER NOT NULL,\n"
+        "    encrypted BOOLEAN DEFAULT FALSE,\n"
+        "    read BOOLEAN DEFAULT FALSE,\n"
+        "    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE\n"
+        ";";
 
-    const char *create_files_table = 
-        "CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        device_id INTEGER NOT NULL,
-        filename TEXT NOT NULL,
-        path TEXT NOT NULL,
-        size INTEGER NOT NULL,
-        status INTEGER NOT NULL,
-        checksum TEXT,
-        encrypted BOOLEAN DEFAULT FALSE,
-        chunks_total INTEGER,
-        chunks_sent INTEGER,
-        last_chunk_timestamp INTEGER,
-        FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
-        )";
+    const char *create_files_table =
+        "CREATE TABLE IF NOT EXISTS files (\n"
+        "    id INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+        "    device_id INTEGER NOT NULL,\n"
+        "    filename TEXT NOT NULL,\n"
+        "    path TEXT NOT NULL,\n"
+        "    size INTEGER NOT NULL,\n"
+        "    status INTEGER NOT NULL,\n"
+        "    checksum TEXT,\n"
+        "    encrypted BOOLEAN DEFAULT FALSE,\n"
+        "    chunks_total INTEGER,\n"
+        "    chunks_sent INTEGER,\n"
+        "    last_chunk_timestamp INTEGER,\n"
+        "    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE\n"
+        ";";
 
     if (!db_execute_query(create_devices_table)) {
         fprintf(stderr, "Failed to create devices table.\n");

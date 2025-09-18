@@ -5,6 +5,17 @@
 #include <string.h>
 #include <errno.h>
 #include "crypto_manager.h"
+#include <sodium.h>
+
+@interface BBFileTransferState : NSObject
+{
+    @public FileTransferState _cState; // Holds the C struct
+}
+@end
+
+@implementation BBFileTransferState
+// No custom implementation needed for now, just a wrapper
+@end
 #include "bluetooth_callbacks.h"
 
 // Define custom service and characteristic UUIDs
@@ -17,20 +28,10 @@
 // This is a common value, but actual MTU can be negotiated.
 #define MAX_BLE_WRITE_DATA_SIZE 500
 
-// Structure to manage ongoing file transfers
-typedef struct {
-    FILE *file_handle;
-    char file_path[1024];
-    char file_name[256]; // To store just the filename from metadata
-    long file_size;
-    long bytes_transferred;
-    unsigned long long current_chunk_index;
-    unsigned char encryption_key[crypto_secretbox_KEYBYTES]; // Key for this specific transfer
-    bool is_sending; // true for sending, false for receiving
-} FileTransferState;
+
 
 // Global dictionaries to store transfer states, keyed by peripheral UUID string
-static NSMutableDictionary<NSString *, FileTransferState *> *ongoingFileTransfers = nil;
+static NSMutableDictionary<NSString *, BBFileTransferState *> *ongoingFileTransfers = nil;
 
 // Define a global pointer to the CBCentralManager
 static CBCentralManager *centralManager = nil;
@@ -44,7 +45,7 @@ static NSMutableDictionary<NSString *, CBCharacteristic *> *messageCharacteristi
 static NSMutableDictionary<NSString *, CBCharacteristic *> *fileTransferCharacteristics = nil;
 
 // Forward declaration for helper function
-static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *characteristic, FileTransferState *transferState);
+static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *characteristic, BBFileTransferState *transferState);
 
 // Delegate for CBCentralManager
 @interface BluetoothCentralManagerDelegate : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
@@ -120,10 +121,10 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
     [messageCharacteristics removeObjectForKey:peripheral.identifier.UUIDString];
     [fileTransferCharacteristics removeObjectForKey:peripheral.identifier.UUIDString];
     
-    FileTransferState *transferState = [ongoingFileTransfers objectForKey:peripheral.identifier.UUIDString];
+    BBFileTransferState *transferState = [ongoingFileTransfers objectForKey:peripheral.identifier.UUIDString];
     if (transferState) {
-        if (transferState->file_handle) {
-            fclose(transferState->file_handle);
+        if (transferState->_cState.file_handle) {
+            fclose(transferState->_cState.file_handle);
         }
         free(transferState);
         [ongoingFileTransfers removeObjectForKey:peripheral.identifier.UUIDString];
@@ -180,7 +181,7 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
                 );
             }
         } else if ([characteristic.UUID.UUIDString isEqualToString:FILE_TRANSFER_CHARACTERISTIC_UUID_STRING]) {
-            FileTransferState *transferState = [ongoingFileTransfers objectForKey:peripheral.identifier.UUIDString];
+            BBFileTransferState *transferState = [ongoingFileTransfers objectForKey:peripheral.identifier.UUIDString];
             if (!transferState) {
                 // This is the first chunk, expected to be metadata
                 NSString *metadataString = [[NSString alloc] initWithData:characteristic.value encoding:NSUTF8StringEncoding];
@@ -203,32 +204,38 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
                             return;
                         }
 
-                        transferState = (FileTransferState *)calloc(1, sizeof(FileTransferState));
-                        if (!transferState) {
+                        BBFileTransferState *newTransferStateWrapper = [[BBFileTransferState alloc] init];
+                        if (!newTransferStateWrapper) {
+                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to allocate memory for BBFileTransferState (receiving).");
+                            return;
+                        }
+                        newTransferStateWrapper->_cState = *(FileTransferState *)calloc(1, sizeof(FileTransferState));
+                        transferState = newTransferStateWrapper;
+                        if (!transferState->_cState.file_handle) { // Check the C struct's file_handle
                             if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to allocate memory for FileTransferState (receiving).");
                             return;
                         }
-                        strncpy(transferState->file_name, filename.UTF8String, sizeof(transferState->file_name) - 1);
-                        transferState->file_name[sizeof(transferState->file_name) - 1] = '\0';
-                        transferState->file_size = fileSize.longValue;
-                        transferState->bytes_transferred = 0;
-                        transferState->current_chunk_index = 0;
-                        transferState->is_sending = false;
-                        memcpy(transferState->encryption_key, keyData.bytes, crypto_secretbox_KEYBYTES);
+                        strncpy(transferState->_cState.file_name, filename.UTF8String, sizeof(transferState->_cState.file_name) - 1);
+                        transferState->_cState.file_name[sizeof(transferState->_cState.file_name) - 1] = '\0';
+                        transferState->_cState.file_size = fileSize.longValue;
+                        transferState->_cState.bytes_transferred = 0;
+                        transferState->_cState.current_chunk_index = 0;
+                        transferState->_cState.is_sending = false;
+                        memcpy(transferState->_cState.encryption_key, keyData.bytes, crypto_secretbox_KEYBYTES);
 
                         NSString *downloadsPath = NSSearchPathForDirectoriesInDomains(NSDownloadsDirectory, NSUserDomainMask, YES).firstObject;
                         NSString *destinationFilePath = [downloadsPath stringByAppendingPathComponent:filename];
-                        strncpy(transferState->file_path, destinationFilePath.UTF8String, sizeof(transferState->file_path) - 1);
-                        transferState->file_path[sizeof(transferState->file_path) - 1] = '\0';
+                        strncpy(transferState->_cState.file_path, destinationFilePath.UTF8String, sizeof(transferState->_cState.file_path) - 1);
+                        transferState->_cState.file_path[sizeof(transferState->_cState.file_path) - 1] = '\0';
 
-                        transferState->file_handle = fopen(transferState->file_path, "wb");
-                        if (!transferState->file_handle) {
+                        transferState->_cState.file_handle = fopen(transferState->_cState.file_path, "wb");
+                        if (!transferState->_cState.file_handle) {
                             if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error: Could not open file %@ for writing: %s", destinationFilePath, strerror(errno)].UTF8String);
-                            free(transferState);
+                            free(transferState); // Free the underlying C struct
                             return;
                         }
                         [ongoingFileTransfers setObject:transferState forKey:peripheral.identifier.UUIDString];
-                        if (g_bluetooth_ui_callbacks.add_file_transfer_item) g_bluetooth_ui_callbacks.add_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->file_name, false);
+                        if (g_bluetooth_ui_callbacks.add_file_transfer_item) g_bluetooth_ui_callbacks.add_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->_cState.file_name, false);
                         if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Receiving file '%@' (size: %ld) from %@.", filename, fileSize.longValue, peripheral.name].UTF8String);
                     } else {
                         if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Missing metadata fields in received JSON.");
@@ -242,24 +249,25 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
                 size_t actual_decrypted_len = 0;
 
                 if (crypto_decrypt_file_chunk((const unsigned char*)characteristic.value.bytes, characteristic.value.length,
-                                              transferState->encryption_key,
-                                              transferState->current_chunk_index,
+                                              transferState->_cState.encryption_key,
+                                              transferState->_cState.current_chunk_index,
                                               decrypted_buffer, sizeof(decrypted_buffer),
                                               &actual_decrypted_len)) {
-                    if (fwrite(decrypted_buffer, 1, actual_decrypted_len, transferState->file_handle) != actual_decrypted_len) {
-                        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error writing decrypted data to file %s: %s", transferState->file_path, strerror(errno)].UTF8String);
+                    if (fwrite(decrypted_buffer, 1, actual_decrypted_len, transferState->_cState.file_handle) != actual_decrypted_len) {
+                        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error writing decrypted data to file %s: %s", transferState->_cState.file_path, strerror(errno)].UTF8String);
                         // TODO: Handle write error, abort transfer
                     }
-                    transferState->bytes_transferred += actual_decrypted_len;
-                    transferState->current_chunk_index++;
-                    if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(peripheral.identifier.UUIDString.UTF8String, transferState->file_name, (double)transferState->bytes_transferred / transferState->file_size);
+                    transferState->_cState.bytes_transferred += actual_decrypted_len;
+                    transferState->_cState.current_chunk_index++;
+                                        if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(peripheral.identifier.UUIDString.UTF8String, transferState->_cState.file_name, (double)transferState->_cState.bytes_transferred / transferState->_cState.file_size);
 
-                    if (transferState->bytes_transferred >= transferState->file_size) {
-                        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%@' received completely.", transferState->file_name].UTF8String);
-                        fclose(transferState->file_handle);
-                        free(transferState);
+                    if (transferState->_cState.bytes_transferred >= transferState->_cState.file_size) {
+                        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%@' received completely.", transferState->_cState.file_name].UTF8String);
+                        fclose(transferState->_cState.file_handle);
+                        // Free the C struct and remove the Objective-C wrapper
+                        free(transferState); // Free the underlying C struct
                         [ongoingFileTransfers removeObjectForKey:peripheral.identifier.UUIDString];
-                        if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->file_name);
+                        if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->_cState.file_name);
                     }
                 } else {
                     if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error decrypting file chunk.");
@@ -275,8 +283,8 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
         if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", [NSString stringWithFormat:@"Error writing value for characteristic %@: %@", characteristic.UUID.UUIDString, error.localizedDescription].UTF8String);
     } else {
         if ([characteristic.UUID.UUIDString isEqualToString:FILE_TRANSFER_CHARACTERISTIC_UUID_STRING]) {
-            FileTransferState *transferState = [ongoingFileTransfers objectForKey:peripheral.identifier.UUIDString];
-            if (transferState && transferState->is_sending) {
+            BBFileTransferState *transferState = [ongoingFileTransfers objectForKey:peripheral.identifier.UUIDString];
+            if (transferState && transferState->_cState.is_sending) {
                 send_next_file_chunk(peripheral, characteristic, transferState);
             }
         }
@@ -286,16 +294,17 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
 @end
 
 // Helper function to send file chunks
-static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *characteristic, FileTransferState *transferState) {
-    if (!transferState || !transferState->file_handle || transferState->bytes_transferred >= transferState->file_size) {
-        if (transferState && transferState->file_handle) {
-            fclose(transferState->file_handle);
-            transferState->file_handle = NULL;
+static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *characteristic, BBFileTransferState *transferState) {
+    if (!transferState || !transferState->_cState.file_handle || transferState->_cState.bytes_transferred >= transferState->_cState.file_size) {
+        if (transferState && transferState->_cState.file_handle) {
+            fclose(transferState->_cState.file_handle);
+            transferState->_cState.file_handle = NULL;
         }
         if (transferState) {
-            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' sent completely.", transferState->file_name].UTF8String);
-            if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->file_name);
-            free(transferState);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' sent completely.", transferState->_cState.file_name].UTF8String);
+            if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->_cState.file_name);
+            // Free the C struct and remove the Objective-C wrapper
+            free(transferState); // Free the underlying C struct
             [ongoingFileTransfers removeObjectForKey:peripheral.identifier.UUIDString];
         }
         return;
@@ -303,40 +312,41 @@ static void send_next_file_chunk(CBPeripheral *peripheral, CBCharacteristic *cha
 
     unsigned char buffer[MAX_BLE_WRITE_DATA_SIZE];
     size_t bytes_to_read = MAX_BLE_WRITE_DATA_SIZE;
-    if (transferState->bytes_transferred + bytes_to_read > transferState->file_size) {
-        bytes_to_read = transferState->file_size - transferState->bytes_transferred;
+    if (transferState->_cState.bytes_transferred + bytes_to_read > transferState->_cState.file_size) {
+        bytes_to_read = transferState->_cState.file_size - transferState->_cState.bytes_transferred;
     }
 
-    size_t bytes_read = fread(buffer, 1, bytes_to_read, transferState->file_handle);
+    size_t bytes_read = fread(buffer, 1, bytes_to_read, transferState->_cState.file_handle);
 
     if (bytes_read > 0) {
         unsigned char encrypted_buffer[MAX_BLE_WRITE_DATA_SIZE + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES];
         size_t actual_ciphertext_len = 0;
 
         if (crypto_encrypt_file_chunk(buffer, bytes_read,
-                                      transferState->encryption_key,
-                                      transferState->current_chunk_index,
+                                      transferState->_cState.encryption_key,
+                                      transferState->_cState.current_chunk_index,
                                       encrypted_buffer, sizeof(encrypted_buffer),
                                       &actual_ciphertext_len)) {
             NSData *dataToSend = [NSData dataWithBytes:encrypted_buffer length:actual_ciphertext_len];
             [peripheral writeValue:dataToSend forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
-            transferState->bytes_transferred += bytes_read;
-            transferState->current_chunk_index++;
-            if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(peripheral.identifier.UUIDString.UTF8String, transferState->file_name, (double)transferState->bytes_transferred / transferState->file_size);
+            transferState->_cState.bytes_transferred += bytes_read;
+            transferState->_cState.current_chunk_index++;
+            if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(peripheral.identifier.UUIDString.UTF8String, transferState->_cState.file_name, (double)transferState->_cState.bytes_transferred / transferState->_cState.file_size);
         } else {
-            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error encrypting file chunk for '%s'.", transferState->file_name].UTF8String);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error encrypting file chunk for '%s'.", transferState->_cState.file_name].UTF8String);
             // TODO: Handle encryption error
         }
-    } else if (ferror(transferState->file_handle)) {
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error reading file '%s': %s", transferState->file_name, strerror(errno)].UTF8String);
+    } else if (ferror(transferState->_cState.file_handle)) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error reading file '%s': %s", transferState->_cState.file_name, strerror(errno)].UTF8String);
         // TODO: Handle file read error
     } else { // EOF reached, and all bytes sent
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' completely sent.", transferState->file_name].UTF8String);
-        fclose(transferState->file_handle);
-        transferState->file_handle = NULL;
-        free(transferState);
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' completely sent.", transferState->_cState.file_name].UTF8String);
+        fclose(transferState->_cState.file_handle);
+        transferState->_cState.file_handle = NULL;
+        // Free the C struct and remove the Objective-C wrapper
+        free(transferState); // Free the underlying C struct
         [ongoingFileTransfers removeObjectForKey:peripheral.identifier.UUIDString];
-        if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->file_name);
+        if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(peripheral.identifier.UUIDString.UTF8String, transferState->_cState.file_name);
     }
 }
 
@@ -441,9 +451,16 @@ static bool macos_sendFile(const char* device_address, const char* file_path) {
         return false;
     }
 
-    FileTransferState *transferState = (FileTransferState *)calloc(1, sizeof(FileTransferState));
-    if (!transferState) {
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to allocate memory for FileTransferState.");
+    BBFileTransferState *transferStateWrapper = [[BBFileTransferState alloc] init];
+    if (!transferStateWrapper) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to allocate memory for BBFileTransferState (sending).");
+        fclose(file);
+        return false;
+    }
+    transferStateWrapper->_cState = *(FileTransferState *)calloc(1, sizeof(FileTransferState));
+    FileTransferState *transferState = &transferStateWrapper->_cState; // Get a pointer to the C struct
+    if (!transferState) { // Check if the C struct allocation failed
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to allocate memory for FileTransferState (sending).");
         fclose(file);
         return false;
     }
@@ -460,7 +477,7 @@ static bool macos_sendFile(const char* device_address, const char* file_path) {
     if (!crypto_generate_session_key(transferState->encryption_key, sizeof(transferState->encryption_key))) {
         if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to generate encryption key for file transfer.");
         fclose(file);
-        free(transferState);
+        free(transferState); // Free the underlying C struct
         return false;
     }
 
@@ -484,7 +501,7 @@ static bool macos_sendFile(const char* device_address, const char* file_path) {
                                   &actual_encrypted_metadata_len)) {
         if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to encrypt file metadata.");
         fclose(file);
-        free(transferState);
+        free(transferState); // Free the underlying C struct
         [ongoingFileTransfers removeObjectForKey:peripheral.identifier.UUIDString];
         return false;
     }

@@ -4,9 +4,9 @@
 #include <systemd/sd-bus.h>
 #include <vector>
 #include <map>
-#include "bluetooth_callbacks.h"
 #include "crypto_manager.h"
 #include <json-c/json.h>
+#include "base64.h"
 
 // BlueZ D-Bus service and interfaces
 #define BLUEZ_BUS_NAME "org.bluez"
@@ -22,46 +22,46 @@
 #define MESSAGE_CHARACTERISTIC_UUID "08590F7E-DB05-467E-8757-72F6F6669999"
 #define FILE_TRANSFER_CHARACTERISTIC_UUID "08590F7E-DB05-467E-8757-72F6F6668888"
 
-// Max data size for a single BLE write (considering MTU and overhead)
 #define MAX_BLE_WRITE_DATA_SIZE 500
 
-// Structure to hold discovered device information
 typedef struct {
     std::string object_path;
     std::string address;
     std::string name;
-    // Store discovered GATT characteristics for this device
     std::string messageCharacteristicPath;
     std::string fileTransferCharacteristicPath;
     bool messageCharacteristicFound;
     bool fileTransferCharacteristicFound;
 } DiscoveredDevice;
 
-// Structure to manage ongoing file transfers
 typedef struct {
     FILE *file_handle;
     char file_path[1024];
-    char file_name[256]; // To store just the filename from metadata
+    char file_name[256];
     long file_size;
     long bytes_transferred;
     unsigned long long current_chunk_index;
-    unsigned char encryption_key[crypto_secretbox_KEYBYTES]; // Key for this specific transfer
-    bool is_sending; // true for sending, false for receiving
-    std::string device_address; // To identify the device for callbacks
-    std::string characteristic_path; // To identify the characteristic for callbacks
+    unsigned char encryption_key[crypto_secretbox_KEYBYTES];
+    bool is_sending;
+    std::string device_address;
+    std::string characteristic_path;
 } FileTransferState;
 
-// Global D-Bus connection
+static IBluetoothManagerEvents* s_listener = nullptr;
 static sd_bus *bus = NULL;
-// Global list of discovered devices
 static std::vector<DiscoveredDevice> discoveredDevices;
-// Map of connected device object paths, keyed by address
 static std::map<std::string, std::string> connectedDevices;
-// Map of ongoing file transfers, keyed by device address
 static std::map<std::string, FileTransferState*> ongoingFileTransfers;
 
-// Forward declaration for helper function
 static void send_next_file_chunk(FileTransferState *transferState);
+
+// ... (rest of the file is the same, just replace g_bluetooth_ui_callbacks with s_listener)
+
+void LinuxBluetoothManager::setEventListener(IBluetoothManagerEvents* listener) {
+    s_listener = listener;
+}
+
+// ... (rest of the implementation of LinuxBluetoothManager methods)
 
 // Helper to get a property from a D-Bus message
 static int get_property_string(sd_bus_message *m, const char *property_name, std::string &value) {
@@ -278,15 +278,14 @@ static int properties_changed_signal_handler(sd_bus_message *m, void *userdata, 
                             // In a real project, you'd use a library like libb64 or implement it.
                             // For now, I'll use a dummy decode and assume the key is directly passed.
                             // This is a simplification for the interactive session.
-                            unsigned char decoded_key[crypto_secretbox_KEYBYTES];
-                            // Dummy base64 decode (replace with actual implementation)
-                            // For now, assuming key_base64 is directly the key bytes for simplicity
-                            if (strlen(key_base64) != crypto_secretbox_KEYBYTES) {
-                                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Received key has incorrect length.");
+                            unsigned char* decoded_key = base64_decode(key_base64, strlen(key_base64), &decoded_key_len);
+                            if (!decoded_key || decoded_key_len != crypto_secretbox_KEYBYTES) {
+                                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Received key has incorrect length or decoding failed.");
                                 json_object_put(jobj);
+                                if (decoded_key) free(decoded_key);
                                 return 0;
                             }
-                            memcpy(decoded_key, key_base64, crypto_secretbox_KEYBYTES);
+                            memcpy(decoded_key, decoded_key, crypto_secretbox_KEYBYTES);
 
                             transferState = (FileTransferState *)calloc(1, sizeof(FileTransferState));
                             if (!transferState) {
@@ -312,14 +311,18 @@ static int properties_changed_signal_handler(sd_bus_message *m, void *userdata, 
 
                             transferState->file_handle = fopen(transferState->file_path, "wb");
                             if (!transferState->file_handle) {
-                                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Error: Could not open file %s for writing: %s", transferState->file_path, strerror(errno)].UTF8String);
+                                char alert_msg[256];
+                                snprintf(alert_msg, sizeof(alert_msg), "Error: Could not open file %s for writing: %s", transferState->file_path, strerror(errno));
+                                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                                 free(transferState);
                                 json_object_put(jobj);
                                 return 0;
                             }
                             ongoingFileTransfers[device.address] = transferState;
                             if (g_bluetooth_ui_callbacks.add_file_transfer_item) g_bluetooth_ui_callbacks.add_file_transfer_item(device.address.c_str(), transferState->file_name, false);
-                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"Receiving file '%s' (size: %ld) from %s.", filename, file_size, device.name.c_str()].UTF8String);
+                            char alert_msg[256];
+                            snprintf(alert_msg, sizeof(alert_msg), "Receiving file '%s' (size: %ld) from %s.", filename, file_size, device.name.c_str());
+                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                             json_object_put(jobj);
                         } else {
                             if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Missing metadata fields in received JSON.");
@@ -347,7 +350,9 @@ static int properties_changed_signal_handler(sd_bus_message *m, void *userdata, 
                         if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(device.address.c_str(), transferState->file_name, (double)transferState->bytes_transferred / transferState->file_size);
 
                         if (transferState->bytes_transferred >= transferState->file_size) {
-                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", [NSString stringWithFormat:@"File '%s' received completely.", transferState->file_name].UTF8String);
+                            char alert_msg[256];
+                            snprintf(alert_msg, sizeof(alert_msg), "File '%s' received completely.", transferState->file_name);
+                            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
                             fclose(transferState->file_handle);
                             free(transferState);
                             ongoingFileTransfers.erase(device.address);
@@ -562,14 +567,48 @@ static void linux_discoverDevices(void) {
     r = sd_bus_call_method(bus, BLUEZ_BUS_NAME, "/org/bluez/hci0", BLUEZ_ADAPTER_INTERFACE, "StartDiscovery", &error, &m, NULL);
     if (r < 0) {
         fprintf(stderr, "Failed to call StartDiscovery: %s\n", error.message ? error.message : strerror(-r));
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", [NSString stringWithFormat:@"Failed to start discovery: %s", error.message ? error.message : "Unknown error"].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to start discovery: %s", error.message ? error.message : "Unknown error");
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", alert_msg);
     }
     sd_bus_error_free(&error);
     sd_bus_message_unref(m);
 }
 
 static bool linux_pairDevice(const char* device_address) {
-    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Linux: Pairing (placeholder).");
+    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Linux: Attempting to pair...");
+
+    DiscoveredDevice* targetDevice = nullptr;
+    for (auto& device : discoveredDevices) {
+        if (device.address == device_address) {
+            targetDevice = &device;
+            break;
+        }
+    }
+
+    if (!targetDevice) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Error: Device not found for pairing.");
+        return false;
+    }
+
+    sd_bus_message *m = NULL;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    int r;
+
+    r = sd_bus_call_method(bus, BLUEZ_BUS_NAME, targetDevice->object_path.c_str(), BLUEZ_DEVICE_INTERFACE, "Pair", &error, &m, NULL);
+    if (r < 0) {
+        fprintf(stderr, "Failed to call Pair on device %s: %s\n", device_address, error.message ? error.message : strerror(-r));
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to pair with device %s: %s", device_address, error.message ? error.message : "Unknown error");
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", alert_msg);
+        sd_bus_error_free(&error);
+        sd_bus_message_unref(m);
+        return false;
+    }
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(m);
+
+    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", "Linux: Pairing initiated. Check device for confirmation.");
     return true;
 }
 
@@ -596,7 +635,9 @@ static bool linux_connect(const char* device_address) {
     r = sd_bus_call_method(bus, BLUEZ_BUS_NAME, targetDevice->object_path.c_str(), BLUEZ_DEVICE_INTERFACE, "Connect", &error, &m, NULL);
     if (r < 0) {
         fprintf(stderr, "Failed to call Connect on device %s: %s\n", device_address, error.message ? error.message : strerror(-r));
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", [NSString stringWithFormat:@"Failed to connect to device %s: %s", device_address, error.message ? error.message : "Unknown error"].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to connect to device %s: %s", device_address, error.message ? error.message : "Unknown error");
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", alert_msg);
         sd_bus_error_free(&error);
         sd_bus_message_unref(m);
         return false;
@@ -636,7 +677,9 @@ static void linux_disconnect(const char* device_address) {
     r = sd_bus_call_method(bus, BLUEZ_BUS_NAME, device_object_path.c_str(), BLUEZ_DEVICE_INTERFACE, "Disconnect", &error, &m, NULL);
     if (r < 0) {
         fprintf(stderr, "Failed to call Disconnect on device %s: %s\n", device_address, error.message ? error.message : strerror(-r));
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", [NSString stringWithFormat:@"Failed to disconnect from device %s: %s", device_address, error.message ? error.message : "Unknown error"].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to disconnect from device %s: %s", device_address, error.message ? error.message : "Unknown error");
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", alert_msg);
     }
     sd_bus_error_free(&error);
     sd_bus_message_unref(m);
@@ -684,7 +727,9 @@ static bool linux_sendMessage(const char* device_address, const char* message) {
                            "a{sv}", options_dict);
     if (r < 0) {
         fprintf(stderr, "Failed to call WriteValue: %s\n", error.message ? error.message : strerror(-r));
-        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", [NSString stringWithFormat:@"Failed to send message: %s", error.message ? error.message : "Unknown error"].UTF8String);
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to send message: %s", error.message ? error.message : "Unknown error");
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("Bluetooth", alert_msg);
         sd_bus_error_free(&error);
         sd_bus_message_unref(m);
         return false;
@@ -703,8 +748,239 @@ static char* linux_receiveMessage(const char* device_address) {
 }
 
 static bool linux_sendFile(const char* device_address, const char* file_path) {
-    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Linux: Sending file (placeholder).");
+    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Linux: Sending file...");
+
+    DiscoveredDevice* targetDevice = nullptr;
+    for (auto& device : discoveredDevices) {
+        if (device.address == device_address) {
+            targetDevice = &device;
+            break;
+        }
+    }
+
+    if (!targetDevice || !targetDevice->fileTransferCharacteristicFound) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Cannot send file. Device not connected or file transfer characteristic not found.");
+        return false;
+    }
+
+    if (ongoingFileTransfers.count(device_address)) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: A file transfer is already in progress for this device.");
+        return false;
+    }
+
+    FILE *file = fopen(file_path, "rb");
+    if (!file) {
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Error: Could not open file %s for reading: %s", file_path, strerror(errno));
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+        return false;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    if (file_size == -1) {
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Error: Could not get file size for %s: %s", file_path, strerror(errno));
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+        fclose(file);
+        return false;
+    }
+
+    FileTransferState *transferState = (FileTransferState *)calloc(1, sizeof(FileTransferState));
+    if (!transferState) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to allocate memory for FileTransferState.");
+        fclose(file);
+        return false;
+    }
+    transferState->file_handle = file;
+    strncpy(transferState->file_path, file_path, sizeof(transferState->file_path) - 1);
+    transferState->file_path[sizeof(transferState->file_path) - 1] = '\0';
+    strncpy(transferState->file_name, strrchr(file_path, '/') ? strrchr(file_path, '/') + 1 : file_path, sizeof(transferState->file_name) - 1);
+    transferState->file_name[sizeof(transferState->file_name) - 1] = '\0';
+    transferState->file_size = file_size;
+    transferState->bytes_transferred = 0;
+    transferState->current_chunk_index = 0;
+    transferState->is_sending = true;
+    transferState->device_address = device_address;
+    transferState->characteristic_path = targetDevice->fileTransferCharacteristicPath;
+
+    if (!crypto_generate_session_key(transferState->encryption_key, sizeof(transferState->encryption_key))) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to generate encryption key for file transfer.");
+        fclose(file);
+        free(transferState);
+        return false;
+    }
+
+    ongoingFileTransfers[device_address] = transferState;
+    if (g_bluetooth_ui_callbacks.add_file_transfer_item) g_bluetooth_ui_callbacks.add_file_transfer_item(device_address, transferState->file_name, true);
+
+    // Send metadata (filename, size, encryption key) as the first chunk
+    json_object *jobj = json_object_new_object();
+    json_object_object_add(jobj, "filename", json_object_new_string(transferState->file_name));
+    json_object_object_add(jobj, "size", json_object_new_int64(file_size));
+    char* encoded_key = base64_encode(transferState->encryption_key, sizeof(transferState->encryption_key));
+    json_object_object_add(jobj, "key", json_object_new_string(encoded_key));
+    free(encoded_key); // Free the allocated base64 string
+
+    const char *metadata_json_str = json_object_to_json_string(jobj);
+    size_t metadata_len = strlen(metadata_json_str);
+
+    unsigned char encrypted_metadata_buffer[metadata_len + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES];
+    size_t actual_encrypted_metadata_len = 0;
+
+    if (!crypto_encrypt_file_chunk((const unsigned char*)metadata_json_str, metadata_len,
+                                  transferState->encryption_key,
+                                  transferState->current_chunk_index, // Chunk 0 for metadata
+                                  encrypted_metadata_buffer, sizeof(encrypted_metadata_buffer),
+                                  &actual_encrypted_metadata_len)) {
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", "Error: Failed to encrypt file metadata.");
+        fclose(file);
+        free(transferState);
+        ongoingFileTransfers.erase(device_address);
+        json_object_put(jobj);
+        return false;
+    }
+
+    sd_bus_message *m = NULL;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    int r;
+
+    // Prepare options dictionary (empty for now)
+    sd_bus_message *options_dict = NULL;
+    r = sd_bus_message_new_array(sd_bus_message_new_method_call(bus, NULL, NULL, NULL, NULL), 'a', '{sv}', &options_dict);
+    if (r < 0) {
+        fprintf(stderr, "Failed to create options dictionary for metadata: %s\n", strerror(-r));
+        json_object_put(jobj);
+        return false;
+    }
+    sd_bus_message_unref(options_dict); // Unref as it's now part of the method call message
+
+    r = sd_bus_call_method(bus, BLUEZ_BUS_NAME,
+                           targetDevice->fileTransferCharacteristicPath.c_str(),
+                           BLUEZ_GATT_CHARACTERISTIC_INTERFACE,
+                           "WriteValue",
+                           &error, &m,
+                           "ay", encrypted_metadata_buffer, actual_encrypted_metadata_len,
+                           "a{sv}", options_dict);
+    if (r < 0) {
+        fprintf(stderr, "Failed to write metadata chunk: %s\n", error.message ? error.message : strerror(-r));
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Failed to write metadata: %s", error.message ? error.message : "Unknown error");
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+        fclose(file);
+        free(transferState);
+        ongoingFileTransfers.erase(device_address);
+        json_object_put(jobj);
+        return false;
+    }
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(m);
+
+    transferState->current_chunk_index++; // Increment for the next data chunk
+
+    char alert_msg[256];
+    snprintf(alert_msg, sizeof(alert_msg), "Sent file metadata for '%s'. Size: %ld. Starting data transfer...", file_path, file_size);
+    if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+
+    // Start sending data chunks immediately
+    send_next_file_chunk(transferState);
+
+    json_object_put(jobj);
     return true;
+}
+
+static void send_next_file_chunk(FileTransferState *transferState) {
+    if (!transferState || !transferState->file_handle || transferState->bytes_transferred >= transferState->file_size) {
+        if (transferState && transferState->file_handle) {
+            fclose(transferState->file_handle);
+            transferState->file_handle = NULL;
+        }
+        if (transferState) {
+            char alert_msg[256];
+            snprintf(alert_msg, sizeof(alert_msg), "File '%s' sent completely.", transferState->file_name);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+            if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(transferState->device_address.c_str(), transferState->file_name);
+            free(transferState);
+            ongoingFileTransfers.erase(transferState->device_address);
+        }
+        return;
+    }
+
+    unsigned char buffer[MAX_BLE_WRITE_DATA_SIZE];
+    size_t bytes_to_read = MAX_BLE_WRITE_DATA_SIZE;
+    if (transferState->bytes_transferred + bytes_to_read > transferState->file_size) {
+        bytes_to_read = transferState->file_size - transferState->bytes_transferred;
+    }
+
+    size_t bytes_read = fread(buffer, 1, bytes_to_read, transferState->file_handle);
+
+    if (bytes_read > 0) {
+        unsigned char encrypted_buffer[MAX_BLE_WRITE_DATA_SIZE + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES];
+        size_t actual_ciphertext_len = 0;
+
+        if (crypto_encrypt_file_chunk(buffer, bytes_read,
+                                      transferState->encryption_key,
+                                      transferState->current_chunk_index,
+                                      encrypted_buffer, sizeof(encrypted_buffer),
+                                      &actual_ciphertext_len)) {
+            sd_bus_message *m = NULL;
+            sd_bus_error error = SD_BUS_ERROR_NULL;
+            int r;
+
+            // Prepare options dictionary (empty for now)
+            sd_bus_message *options_dict = NULL;
+            r = sd_bus_message_new_array(sd_bus_message_new_method_call(bus, NULL, NULL, NULL, NULL), 'a', '{sv}', &options_dict);
+            if (r < 0) {
+                fprintf(stderr, "Failed to create options dictionary for chunk: %s\n", strerror(-r));
+                return;
+            }
+            sd_bus_message_unref(options_dict); // Unref as it's now part of the method call message
+
+            r = sd_bus_call_method(bus, BLUEZ_BUS_NAME,
+                                   transferState->characteristic_path.c_str(),
+                                   BLUEZ_GATT_CHARACTERISTIC_INTERFACE,
+                                   "WriteValue",
+                                   &error, &m,
+                                   "ay", encrypted_buffer, actual_ciphertext_len,
+                                   "a{sv}", options_dict);
+            if (r < 0) {
+                fprintf(stderr, "Failed to write data chunk: %s\n", error.message ? error.message : strerror(-r));
+                char alert_msg[256];
+                snprintf(alert_msg, sizeof(alert_msg), "Failed to write data chunk: %s", error.message ? error.message : "Unknown error");
+                if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+                // TODO: Handle write error
+            } else {
+                transferState->bytes_transferred += bytes_read;
+                transferState->current_chunk_index++;
+                if (g_bluetooth_ui_callbacks.update_file_transfer_progress) g_bluetooth_ui_callbacks.update_file_transfer_progress(transferState->device_address.c_str(), transferState->file_name, (double)transferState->bytes_transferred / transferState->file_size);
+                // Recursively call to send the next chunk
+                send_next_file_chunk(transferState);
+            }
+            sd_bus_error_free(&error);
+            sd_bus_message_unref(m);
+        } else {
+            char alert_msg[256];
+            snprintf(alert_msg, sizeof(alert_msg), "Error encrypting file chunk for '%s'.", transferState->file_name);
+            if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+            // TODO: Handle encryption error
+        }
+    } else if (ferror(transferState->file_handle)) {
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "Error reading file '%s': %s", transferState->file_name, strerror(errno));
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+        // TODO: Handle file read error
+    } else { // EOF reached, and all bytes sent
+        char alert_msg[256];
+        snprintf(alert_msg, sizeof(alert_msg), "File '%s' sent completely.", transferState->file_name);
+        if (g_bluetooth_ui_callbacks.show_alert) g_bluetooth_ui_callbacks.show_alert("File Transfer", alert_msg);
+        fclose(transferState->file_handle);
+        transferState->file_handle = NULL;
+        free(transferState);
+        ongoingFileTransfers.erase(transferState->device_address);
+        if (g_bluetooth_ui_callbacks.remove_file_transfer_item) g_bluetooth_ui_callbacks.remove_file_transfer_item(transferState->device_address.c_str(), transferState->file_name);
+    }
 }
 
 static bool linux_receiveFile(const char* device_address, const char* destination_path) {
@@ -712,17 +988,26 @@ static bool linux_receiveFile(const char* device_address, const char* destinatio
     return true;
 }
 
-static IBluetoothManager linux_manager = {
-    .discoverDevices = linux_discoverDevices,
-    .pairDevice = linux_pairDevice,
-    .connect = linux_connect,
-    .disconnect = linux_disconnect,
-    .sendMessage = linux_sendMessage,
-    .receiveMessage = linux_receiveMessage,
-    .sendFile = linux_sendFile,
-    .receiveFile = linux_receiveFile
-};
+void LinuxBluetoothManager::discoverDevices() {
+    linux_discoverDevices();
+}
 
-IBluetoothManager* get_linux_bluetooth_manager(void) {
-    return &linux_manager;
+bool LinuxBluetoothManager::pairDevice(const std::string& address) {
+    return linux_pairDevice(address.c_str());
+}
+
+bool LinuxBluetoothManager::connect(const std::string& address) {
+    return linux_connect(address.c_str());
+}
+
+void LinuxBluetoothManager::disconnect(const std::string& address) {
+    linux_disconnect(address.c_str());
+}
+
+bool LinuxBluetoothManager::sendMessage(const std::string& address, const std::string& message) {
+    return linux_sendMessage(address.c_str(), message.c_str());
+}
+
+bool LinuxBluetoothManager::sendFile(const std::string& address, const std::string& filePath) {
+    return linux_sendFile(address.c_str(), filePath.c_str());
 }
