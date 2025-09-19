@@ -55,6 +55,8 @@ int main(int argc, char *argv[]) {
     // Install custom message handler for JSON logging (if still needed, otherwise remove)
     // qInstallMessageHandler(JsonFileLogger::messageHandler); // This will be overridden by customMessageHandler
 
+    Q_INIT_RESOURCE(qmake_com_bluelinkmanager);
+
     QApplication app(argc, argv);
 
     BlueLinkApp blueLinkApp;
