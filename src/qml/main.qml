@@ -7,6 +7,10 @@ ApplicationWindow {
     visible: true
     title: qsTr("Simplified BlueLink Manager")
 
+    Component.onCompleted: {
+        console.log("main.qml loaded and component completed.");
+    }
+
     Rectangle {
         anchors.fill: parent
         color: "lightblue"

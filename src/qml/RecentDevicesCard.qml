@@ -12,7 +12,15 @@ Rectangle {
 
     // Apply shadow effect
     layer.enabled: true
-    layer.effect: Theme.shadows.low
+    layer.effect: DropShadow {
+        anchors.fill: parent
+        horizontalOffset: 0
+        verticalOffset: 1
+        radius: 3
+        samples: 17
+        color: "#1F000000"
+        spread: 0.12
+    }
 
     ColumnLayout {
         anchors.fill: parent

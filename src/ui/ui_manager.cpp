@@ -9,6 +9,8 @@ UIManager::UIManager(QObject *parent) :
     m_blueLinkApp(nullptr) // Initialize to nullptr
 {
     // No direct connections here anymore, QML will call methods on blueLinkApp
+    m_engine.addImportPath(QStringLiteral("qrc:/"));
+    m_engine.addImportPath(QStringLiteral("qrc:/qt-project.org/imports"));
 }
 
 UIManager::~UIManager()
@@ -26,7 +28,7 @@ void UIManager::setBlueLinkApp(BlueLinkApp* app)
 
 void UIManager::show()
 {
-    m_engine.load(QUrl(QStringLiteral("qrc:/src/qml/main.qml")));
+    m_engine.load(QUrl::fromLocalFile("/Volumes/RCA/beam/BlueBeamNative/src/qml/main.qml"));
     if (m_engine.rootObjects().isEmpty()) {
         qCritical("Error: No root objects in QML engine. Check qrc:/src/qml/main.qml");
     } else {

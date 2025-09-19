@@ -12,36 +12,7 @@ QtObject {
     // Corner Radius
     readonly property int cornerRadius: 12
 
-    // Shadows (implemented with DropShadow)
-    readonly property var shadows: {
-        "low": DropShadow {
-            anchors.fill: parent
-            horizontalOffset: 0
-            verticalOffset: 1
-            radius: 3
-            samples: 17
-            color: "#1F000000" // rgba(0,0,0,0.12) converted to ARGB hex
-            spread: 0.12
-        },
-        "medium": DropShadow {
-            anchors.fill: parent
-            horizontalOffset: 0
-            verticalOffset: 4
-            radius: 6
-            samples: 17
-            color: "#29000000" // rgba(0,0,0,0.16) converted to ARGB hex
-            spread: 0.16
-        },
-        "high": DropShadow {
-            anchors.fill: parent
-            horizontalOffset: 0
-            verticalOffset: 10
-            radius: 20
-            samples: 17
-            color: "#40000000" // rgba(0,0,0,0.25) converted to ARGB hex
-            spread: 0.25
-        }
-    }
+    // Shadows (implemented with DropShadow) - Removed due to QML syntax limitations
 
     // Fonts
     readonly property var fonts: {

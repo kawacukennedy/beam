@@ -112,37 +112,33 @@ add_executable(BlueLinkManager_GUI
     src/bluelink_app.cpp
 )
 
-# Generate resource file using rcc
-set(QML_RESOURCE_FILE_CPP ${CMAKE_CURRENT_BINARY_DIR}/qrc_qml.cpp)
-add_custom_command(
-    OUTPUT ${QML_RESOURCE_FILE_CPP}
-    COMMAND /usr/local/Cellar/qt/6.9.2/share/qt/libexec/rcc -name qml_resources -o ${QML_RESOURCE_FILE_CPP} -root ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/qml.qrc
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/qml.qrc
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/main.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/Theme.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/SideBar.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/TopBar.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/DashboardScreen.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/AdapterCard.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/RecentDevicesCard.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/DeviceListScreen.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/DeviceCard.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/ChatScreen.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/MessageBubble.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/InputField.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/SendButton.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/FileTransferScreen.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/SettingsScreen.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/GeneralSettings.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/BluetoothSettings.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/AdvancedSettings.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/PrimaryButton.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/Toast.qml
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/qml/TypingIndicator.qml
+# Add QML module
+qt_add_qml_module(BlueLinkManager_GUI
+    URI com.bluelinkmanager
+    VERSION 1.0
+    QML_FILES
+        src/qml/main.qml
+        src/qml/Theme.qml
+        src/qml/SideBar.qml
+        src/qml/TopBar.qml
+        src/qml/DashboardScreen.qml
+        src/qml/AdapterCard.qml
+        src/qml/RecentDevicesCard.qml
+        src/qml/DeviceListScreen.qml
+        src/qml/DeviceCard.qml
+        src/qml/ChatScreen.qml
+        src/qml/MessageBubble.qml
+        src/qml/InputField.qml
+        src/qml/SendButton.qml
+        src/qml/FileTransferScreen.qml
+        src/qml/SettingsScreen.qml
+        src/qml/GeneralSettings.qml
+        src/qml/BluetoothSettings.qml
+        src/qml/AdvancedSettings.qml
+        src/qml/PrimaryButton.qml
+        src/qml/Toast.qml
+        src/qml/TypingIndicator.qml
 )
-
-# Add the generated resource file to the executable sources
-target_sources(BlueLinkManager_GUI PRIVATE ${QML_RESOURCE_FILE_CPP})
 
 # Link Qt libraries and the core C backend library
 target_link_libraries(BlueLinkManager_GUI PRIVATE
