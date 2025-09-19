@@ -29,6 +29,11 @@ void UIManager::show()
     m_engine.load(QUrl(QStringLiteral("qrc:/src/qml/main.qml")));
     if (m_engine.rootObjects().isEmpty()) {
         qCritical("Error: No root objects in QML engine. Check qrc:/src/qml/main.qml");
+    } else {
+        QQuickWindow *window = qobject_cast<QQuickWindow*>(m_engine.rootObjects().first());
+        if (window) {
+            window->show();
+        }
     }
 }
 

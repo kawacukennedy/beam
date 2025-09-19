@@ -1,47 +1,19 @@
 import QtQuick
 import QtQuick.Window
-import QtQuick.Layouts
-import QtQuick.Controls
-import Theme
-import SideBar
-import TopBar
 
 ApplicationWindow {
-    id: appWindow
-    width: 1280
-    height: 800
+    width: 640
+    height: 480
     visible: true
-    title: qsTr("BlueLink Manager")
+    title: qsTr("Simplified BlueLink Manager")
 
-    // Access theme properties
-    color: Theme.color("background")
-
-    header: TopBar { id: topBar }
-
-    RowLayout {
+    Rectangle {
         anchors.fill: parent
-
-        SideBar { id: sideBar; contentStack: contentStack }
-
-        StackLayout {
-            id: contentStack
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-
-            // Dashboard Screen
-            DashboardScreen { }
-
-            // Devices Screen
-            DeviceListScreen { }
-
-            // Chat Screen
-            ChatScreen { }
-
-            // File Transfer Screen
-            FileTransferScreen { }
-
-            // Settings Screen
-            SettingsScreen { }
+        color: "lightblue"
+        Text {
+            anchors.centerIn: parent
+            text: "Hello from Simplified QML!"
+            font.pixelSize: 24
         }
     }
 }

@@ -88,11 +88,12 @@ static NSMutableDictionary<NSString *, BluetoothMainThreadBridge *> *mainThreadB
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
     // Ensure QCoreApplication is initialized for Qt's event loop
-    if (!QCoreApplication::instance()) {
-        static int argc = 0;
-        QCoreApplication *app = new QCoreApplication(argc, nullptr);
-        Q_UNUSED(app);
-    }
+    // This block is removed as QApplication is initialized in main.cpp
+    // if (!QCoreApplication::instance()) {
+    //     static int argc = 0;
+    //     QCoreApplication *app = new QCoreApplication(argc, nullptr);
+    //     Q_UNUSED(app);
+    // }
 
     switch (central.state) {
         case CBManagerStatePoweredOn: {
@@ -387,6 +388,18 @@ static IBluetoothManager macos_manager = {
     .receiveFile = macos_receiveFile
 };
 
+static void initialize_macos_bluetooth_globals() {
+    if (!discoveredPeripherals) {
+        discoveredPeripherals = [[NSMutableArray alloc] init];
+        connectedPeripherals = [[NSMutableDictionary alloc] init];
+        messageCharacteristics = [[NSMutableDictionary alloc] init];
+        fileTransferCharacteristics = [[NSMutableDictionary alloc] init];
+        connectionTimers = [[NSMutableDictionary alloc] init];
+        mainThreadBridges = [[NSMutableDictionary alloc] init];
+    }
+}
+
 IBluetoothManager* get_macos_bluetooth_manager(void) {
+    initialize_macos_bluetooth_globals();
     return &macos_manager;
 }

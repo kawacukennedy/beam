@@ -30,7 +30,7 @@
 
 @end
 
-static UserNotificationDelegate *delegate = nil;
+static UserNotificationDelegate *delegate __attribute__((objc_precise_lifetime)) = nil;
 
 void notification_manager_init(void) {
     NSLog(@"Notification Manager initialized (macOS - UserNotifications.framework).");

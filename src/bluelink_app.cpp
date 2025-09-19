@@ -92,7 +92,7 @@ void BlueLinkApp::start()
     db_create_tables(); // Create tables if they don't exist
 
     // Initialize notification manager
-    notification_manager_init();
+    // notification_manager_init();
 
     m_uiManager->show();
 }
