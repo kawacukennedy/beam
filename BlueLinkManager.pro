@@ -79,4 +79,4 @@ INCLUDEPATH += src \
 DESTDIR = build/bin
 
 # The application name
-TARGET = BlueBeamNative_GUI
+TARGET = BlueLinkManager_GUI

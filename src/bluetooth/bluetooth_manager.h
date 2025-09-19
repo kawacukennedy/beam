@@ -3,6 +3,10 @@
 
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Define IBluetoothManager struct with function pointers
 typedef struct IBluetoothManager {
     void (*discoverDevices)(void);
@@ -17,5 +21,9 @@ typedef struct IBluetoothManager {
 
 // Function to get the platform-specific Bluetooth manager implementation
 IBluetoothManager* get_bluetooth_manager(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // BLUETOOTH_MANAGER_H

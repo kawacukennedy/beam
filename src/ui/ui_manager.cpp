@@ -1,25 +1,27 @@
 #include "ui_manager.h"
+#include "bluelink_app.h" // Include BlueLinkApp header
 #include <QQmlContext>
 #include <QQuickWindow>
 #include <QDebug>
 
-UIManager::UIManager(QObject *parent) : QObject(parent)
+UIManager::UIManager(QObject *parent) : 
+    QObject(parent),
+    m_blueLinkApp(nullptr) // Initialize to nullptr
 {
-    // Register C++ object for QML interaction if needed
-    // m_engine.rootContext()->setContextProperty("uiManager", this);
-
-    // Connect signals from this UIManager to its slots
-    // This is a self-connection to emit the signals that BlueLinkApp will connect to
-    connect(this, &UIManager::requestBluetoothDiscovery, this, &UIManager::onDiscoverDevicesClicked);
-    connect(this, &UIManager::requestConnectDevice, this, &UIManager::onConnectDeviceClicked);
-    connect(this, &UIManager::requestDisconnectDevice, this, &UIManager::onDisconnectDeviceClicked);
-    connect(this, &UIManager::requestSendMessage, this, &UIManager::onSendMessageClicked);
-    connect(this, &UIManager::requestSendFile, this, &UIManager::onSendFileClicked);
-    connect(this, &UIManager::requestShowScreen, this, &UIManager::onScreenRequested);
+    // No direct connections here anymore, QML will call methods on blueLinkApp
 }
 
 UIManager::~UIManager()
 {
+}
+
+void UIManager::setBlueLinkApp(BlueLinkApp* app)
+{
+    if (m_blueLinkApp != app) {
+        m_blueLinkApp = app;
+        m_engine.rootContext()->setContextProperty("blueLinkApp", m_blueLinkApp);
+        emit blueLinkAppChanged();
+    }
 }
 
 void UIManager::show()
@@ -30,38 +32,26 @@ void UIManager::show()
     }
 }
 
-void UIManager::onDiscoverDevicesClicked()
-{
-    qDebug() << "UIManager: Discover Devices clicked (from QML).";
+void UIManager::onDiscoverDevicesClicked() {
     emit requestBluetoothDiscovery();
 }
 
-void UIManager::onConnectDeviceClicked(const QString& address)
-{
-    qDebug() << "UIManager: Connect Device clicked (from QML) for:" << address;
+void UIManager::onConnectDeviceClicked(const QString& address) {
     emit requestConnectDevice(address);
 }
 
-void UIManager::onDisconnectDeviceClicked(const QString& address)
-{
-    qDebug() << "UIManager: Disconnect Device clicked (from QML) for:" << address;
+void UIManager::onDisconnectDeviceClicked(const QString& address) {
     emit requestDisconnectDevice(address);
 }
 
-void UIManager::onSendMessageClicked(const QString& address, const QString& message)
-{
-    qDebug() << "UIManager: Send Message clicked (from QML) to:" << address << ", message:" << message;
+void UIManager::onSendMessageClicked(const QString& address, const QString& message) {
     emit requestSendMessage(address, message);
 }
 
-void UIManager::onSendFileClicked(const QString& address, const QString& filePath)
-{
-    qDebug() << "UIManager: Send File clicked (from QML) to:" << address << ", path:" << filePath;
+void UIManager::onSendFileClicked(const QString& address, const QString& filePath) {
     emit requestSendFile(address, filePath);
 }
 
-void UIManager::onScreenRequested(const QString& screenName)
-{
-    qDebug() << "UIManager: Screen requested (from QML):" << screenName;
+void UIManager::onScreenRequested(const QString& screenName) {
     emit requestShowScreen(screenName);
 }

@@ -1,4 +1,5 @@
 import QtQuick
+import QtGraphicalEffects // Import for DropShadow
 
 // Theme.qml - Defines global UI styles
 
@@ -11,12 +12,35 @@ QtObject {
     // Corner Radius
     readonly property int cornerRadius: 12
 
-    // Shadows (simplified for QML, typically implemented with Rectangle + Opacity/Color)
-    // These are conceptual values. Actual implementation might use ShaderEffectSource or multiple Rectangles.
+    // Shadows (implemented with DropShadow)
     readonly property var shadows: {
-        "low": "0 1px 3px rgba(0,0,0,0.12)",
-        "medium": "0 4px 6px rgba(0,0,0,0.16)",
-        "high": "0 10px 20px rgba(0,0,0,0.25)"
+        "low": DropShadow {
+            anchors.fill: parent
+            horizontalOffset: 0
+            verticalOffset: 1
+            radius: 3
+            samples: 17
+            color: "#1F000000" // rgba(0,0,0,0.12) converted to ARGB hex
+            spread: 0.12
+        },
+        "medium": DropShadow {
+            anchors.fill: parent
+            horizontalOffset: 0
+            verticalOffset: 4
+            radius: 6
+            samples: 17
+            color: "#29000000" // rgba(0,0,0,0.16) converted to ARGB hex
+            spread: 0.16
+        },
+        "high": DropShadow {
+            anchors.fill: parent
+            horizontalOffset: 0
+            verticalOffset: 10
+            radius: 20
+            samples: 17
+            color: "#40000000" // rgba(0,0,0,0.25) converted to ARGB hex
+            spread: 0.25
+        }
     }
 
     // Fonts
@@ -43,7 +67,8 @@ QtObject {
             "text_secondary": "#666666",
             "border": "#E0E0E0",
             "error": "#D32F2F",
-            "success": "#2E7D32"
+            "success": "#2E7D32",
+            "sidebar_hover": "#E6F0FF"
         },
         "dark": {
             "background": "#1E1E1E",
@@ -54,7 +79,8 @@ QtObject {
             "text_secondary": "#AAAAAA",
             "border": "#333333",
             "error": "#FF6B6B",
-            "success": "#4CAF50"
+            "success": "#4CAF50",
+            "sidebar_hover": "#2A2A2A"
         }
     }
 

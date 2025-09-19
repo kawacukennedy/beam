@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Function to initialize the crypto manager
 void crypto_manager_init(void);
 
@@ -41,5 +45,9 @@ bool crypto_generate_keypair(unsigned char* public_key, unsigned char* secret_ke
 bool crypto_perform_ecdh(unsigned char* shared_secret,
                          const unsigned char* public_key_remote,
                          const unsigned char* secret_key_local);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // CRYPTO_MANAGER_H

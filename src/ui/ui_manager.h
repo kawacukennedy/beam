@@ -4,10 +4,12 @@
 #include <QObject>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include "bluelink_app.h" // Include BlueLinkApp header directly
 
 class UIManager : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(BlueLinkApp* blueLinkApp READ blueLinkApp WRITE setBlueLinkApp NOTIFY blueLinkAppChanged)
 
 public:
     explicit UIManager(QObject *parent = nullptr);
@@ -15,7 +17,12 @@ public:
 
     void show();
 
+    BlueLinkApp* blueLinkApp() const { return m_blueLinkApp; }
+    void setBlueLinkApp(BlueLinkApp* app);
+
 signals:
+    void blueLinkAppChanged();
+
     // Signals to communicate UI events to the BlueLinkApp
     void requestBluetoothDiscovery();
     void requestConnectDevice(const QString& address);
@@ -35,6 +42,7 @@ public slots:
 
 private:
     QQmlApplicationEngine m_engine;
+    BlueLinkApp* m_blueLinkApp; // Not owned by UIManager
 };
 
 #endif // UI_MANAGER_H

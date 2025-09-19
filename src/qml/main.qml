@@ -1,27 +1,47 @@
 import QtQuick
 import QtQuick.Window
-import "Theme.qml" as Theme
+import QtQuick.Layouts
+import QtQuick.Controls
+import Theme
+import SideBar
+import TopBar
 
-Window {
-    width: 640
-    height: 480
+ApplicationWindow {
+    id: appWindow
+    width: 1280
+    height: 800
     visible: true
     title: qsTr("BlueLink Manager")
 
     // Access theme properties
     color: Theme.color("background")
 
-    Rectangle {
-        anchors.fill: parent
-        color: Theme.color("surface")
-        radius: Theme.cornerRadius
+    header: TopBar { id: topBar }
 
-        Text {
-            anchors.centerIn: parent
-            text: "Welcome to BlueLink Manager (QML)"
-            font.pixelSize: Theme.fonts.h1
-            font.weight: Theme.fonts.h1Weight
-            color: Theme.color("text_primary")
+    RowLayout {
+        anchors.fill: parent
+
+        SideBar { id: sideBar; contentStack: contentStack }
+
+        StackLayout {
+            id: contentStack
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            // Dashboard Screen
+            DashboardScreen { }
+
+            // Devices Screen
+            DeviceListScreen { }
+
+            // Chat Screen
+            ChatScreen { }
+
+            // File Transfer Screen
+            FileTransferScreen { }
+
+            // Settings Screen
+            SettingsScreen { }
         }
     }
 }
