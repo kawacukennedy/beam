@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Installer>
+    <Name>BlueConnect Desktop</Name>
+    <Version>1.0.0</Version>
+    <Publisher>YourCompany Inc.</Publisher>
+    <StartMenuDir>BlueConnect Desktop</StartMenuDir>
+    <TargetDir>@ApplicationsDir@/BlueConnect Desktop</TargetDir>
+    <Title>Welcome to BlueConnect Desktop Installer</Title>
+    <WizardStyle>Modern</WizardStyle>
+    <WizardShowPageList>true</WizardShowPageList>
+    <RunProgram/>
+    <MaintenanceToolName>BlueConnectDesktopMaintenanceTool</MaintenanceToolName>
+    <MaintenanceToolButtonText>Maintenance Tool</MaintenanceToolButtonText>
+    <MaintenanceToolIniFile>maintenance.ini</MaintenanceToolIniFile>
+    <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
+    <AllowSpaceInPath>true</AllowSpaceInPath>
+    <Icon>resources/icons/icon.png</Icon>
+    <Logo>resources/icons/icon.png</Logo>
+    <Watermark>resources/branding/splash.png</Watermark>
+    <Background>resources/branding/splash.png</Background>
+    <StyleSheet>style.qss</StyleSheet>
+    <CustomPages>
+        <CustomPage>WelcomePage.qml</CustomPage>
+        <CustomPage>LicenseAgreementPage.qml</CustomPage>
+        <CustomPage>PreInstallationChecksPage.qml</CustomPage>
+        <CustomPage>InstallationDirectoryPage.qml</CustomPage>
+        <CustomPage>OptionalFeaturesPage.qml</CustomPage>
+    </CustomPages>
+    <Translations>
+        <Translation>en.qm</Translation>
+        <Translation>fr.qm</Translation>
+        <Translation>de.qm</Translation>
+        <Translation>es.qm</Translation>
+        <Translation>zh.qm</Translation>
+        <Translation>ar.qm</Translation>
+        <Translation>ru.qm</Translation>
+        <Translation>pt.qm</Translation>
+        <Translation>ja.qm</Translation>
+        <Translation>ko.qm</Translation>
+    </Translations>
+</Installer>
