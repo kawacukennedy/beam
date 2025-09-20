@@ -1,49 +1,51 @@
-import QtQuick 2.0
+import QtQuick 2.12
 import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.12
 
-WizardPage {
+Page {
     id: optionalFeaturesPage
     title: qsTr("Optional Features")
 
+    Component.onCompleted: {
+        // This page is always complete
+        optionalFeaturesPage.complete = true;
+    }
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 50
-        spacing: 10
+        anchors.margins: 20
+        spacing: 15
 
-        CheckBox {
-            id: autoStartServiceCheckbox
-            text: qsTr("Auto-start Bluetooth service")
-            checked: true
-            tooltip: qsTr("Enable background service on startup")
-            focus: true
-            onCheckedChanged: {
-                installer.setValue("AutoStartService", checked);
-            }
+        Label {
+            text: qsTr("Select the optional features you want to install.")
+            font.pointSize: 12
         }
 
         CheckBox {
-            id: startMenuShortcutCheckbox
+            id: autoStartCheckbox
+            text: qsTr("Auto-start Bluetooth service")
+            checked: installer.componentByName("AutoStart").selected
+            onCheckedChanged: installer.componentByName("AutoStart").selected = checked
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Enable background service on startup")
+        }
+
+        CheckBox {
+            id: startMenuCheckbox
             text: qsTr("Start menu shortcut")
-            checked: false
-            tooltip: qsTr("Add app to start menu")
-            focus: true // Explicitly set focus for accessibility
-            onCheckedChanged: {
-                installer.setValue("StartMenuShortcut", checked);
-            }
+            checked: installer.componentByName("StartMenu").selected
+            onCheckedChanged: installer.componentByName("StartMenu").selected = checked
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Add app to start menu")
         }
 
         CheckBox {
             id: desktopShortcutCheckbox
             text: qsTr("Desktop shortcut")
-            checked: false
-            tooltip: qsTr("Create desktop icon")
-            focus: true // Explicitly set focus for accessibility
-            onCheckedChanged: {
-                installer.setValue("DesktopShortcut", checked);
-            }
+            checked: installer.componentByName("DesktopShortcut").selected
+            onCheckedChanged: installer.componentByName("DesktopShortcut").selected = checked
+            ToolTip.visible: hovered
+            ToolTip.text: qsTr("Create desktop icon")
         }
     }
-
-    property bool complete: true
 }

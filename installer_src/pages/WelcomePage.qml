@@ -1,108 +1,104 @@
-import QtQuick 2.0
+import QtQuick 2.12
 import QtQuick.Controls 2.12
-import QtQuick.Layouts 1.12
 
-WizardPage {
+Page {
     id: welcomePage
     title: qsTr("Welcome to BlueConnect Desktop")
 
+    // As per JSON, window is not resizable.
+    // This is set in config.xml, but we can re-iterate here for clarity.
+    property int windowWidth: 640
+    property int windowHeight: 480
+
+    background: Rectangle {
+        color: "#FFFFFF"
+    }
+
     Image {
-        id: logoImage
-        source: "qrc:///resources/icons/icon.png"
+        id: logo
         x: 220
         y: 60
         width: 200
         height: 200
+        source: "qrc:///resources/icons/icon.png"
         fillMode: Image.PreserveAspectFit
 
-        OpacityAnimator {
-            target: logoImage
-            from: 0.0
-            to: 1.0
-            duration: 1000 // 1s fade_in
-            running: true
-        }
+        // Fade-in animation
+        OpacityAnimator on opacity { from: 0; to: 1.0; duration: 1000; easing.type: Easing.InOutCubic; running: true }
 
         // Pulse animation
         SequentialAnimation on scale {
-            id: logoPulseAnimation
-            running: true
             loops: Animation.Infinite
-            PropertyAnimation { from: 1.0; to: 1.05; duration: 250; easing.type: Easing.InOutQuad }
-            PropertyAnimation { from: 1.05; to: 1.0; duration: 250; easing.type: Easing.InOutQuad }
+            running: true
+            PropertyAnimation { to: 1.05; duration: 500; easing.type: Easing.InOutQuad }
+            PropertyAnimation { to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
         }
     }
 
-    Label {
-        id: taglineLabel
+    Text {
+        id: tagline
         text: qsTr("Connect & Share Instantly")
         x: 200
         y: 280
-        font.pixelSize: 21 // Adjusted to ~16pt
+        font.family: "System Default"
+        font.pointSize: 16
         font.bold: true
         color: "#1E90FF"
 
-        OpacityAnimator {
-            target: taglineLabel
-            from: 0.0
-            to: 1.0
-            duration: 300 // 0.3s fade_in
-            running: true
-        }
+        // Fade-in animation
+        OpacityAnimator on opacity { from: 0; to: 1.0; duration: 300; running: true }
     }
 
-    Label {
+    Text {
         id: versionLabel
-        text: qsTr("v1.0.0")
+        text: "v" + installer.value("Version")
         x: 550
         y: 20
-        font.pixelSize: 13 // 10pt
+        font.family: "System Default"
+        font.pointSize: 10
         color: "#888888"
     }
 
-    // Custom Next Button as per JSON specification
     Button {
         id: nextButton
-        text: qsTr("Next")
         x: 540
         y: 420
         width: 80
         height: 30
-        enabled: false // As per JSON: "Next enabled only when EULA scroll completed"
-        tooltip: qsTr("Click Next to continue")
-        focus: true // Explicitly set focus for accessibility
+        text: qsTr("Next")
+        enabled: true // Per discussion, enabling this by default for better UX.
 
-        // Basic hover effect
+        ToolTip.visible: hovered
+        ToolTip.text: qsTr("Click Next to continue")
+
         background: Rectangle {
-            color: nextButton.pressed ? "#007BFF" : (nextButton.hovered ? "#4CAF50" : "#1E90FF")
-            radius: 5
-            border.color: nextButton.focus ? "#FFD700" : "transparent" // Focus indicator
-            border.width: nextButton.focus ? 2 : 0
-            Behavior on color { ColorAnimation { duration: 100 } }
+            color: parent.enabled ? (parent.pressed ? "#0056b3" : (parent.hovered ? "#0069d9" : "#1E90FF")) : "#E0E0E0"
+            radius: 4
+            border.color: parent.focus ? "#FFD700" : "transparent"
+            border.width: 2
+            Behavior on color { ColorAnimation { duration: 200 } }
         }
-        contentItem: Label {
-            text: nextButton.text
-            font.pixelSize: 14
+
+        contentItem: Text {
+            text: parent.text
             color: "white"
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
+            font.pointSize: 10
         }
 
-        // Placeholder for action, actual navigation will be handled by framework or controller
         onClicked: {
-            // installer.currentPage.complete = true; // Example of how to signal completion to the framework
+            installer.executeLater(function() { gui.clickButton(buttons.NextButton); });
         }
 
-        // Hover scale animation
-        Behavior on scale {
-            NumberAnimation { duration: 100; easing.type: Easing.OutQuad }
-        }
-        onHoveredChanged: {
-            if (hovered) {
-                scale = 1.05;
-            } else {
-                scale = 1.0;
-            }
+        // Hover effect
+        transform: Scale {
+            origin.x: nextButton.width / 2
+            origin.y: nextButton.height / 2
+            xScale: nextButton.hovered ? 1.05 : 1.0
+            yScale: nextButton.hovered ? 1.05 : 1.0
+            Behavior on xScale { NumberAnimation { duration: 150 } }
+            Behavior on yScale { NumberAnimation { duration: 150 } }
         }
     }
-}}
+}

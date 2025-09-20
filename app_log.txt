@@ -1,0 +1,3 @@
+2025-09-19 17:37:03.041 [Warning] QQmlApplicationEngine failed to load component (:0, )
+2025-09-19 17:37:03.042 [Warning] file:///Volumes/RCA/beam/BlueBeamNative/src/qml/main.qml:4:1: ApplicationWindow is not a type (file:///Volumes/RCA/beam/BlueBeamNative/src/qml/main.qml:4, )
+2025-09-19 17:37:03.042 [Critical] Error: No root objects in QML engine. Check qrc:/src/qml/main.qml (:0, )
