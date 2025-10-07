@@ -148,3 +148,66 @@ target_link_libraries(BlueLinkManager_GUI PRIVATE
     BlueLinkManager_Core
     SQLite::SQLite3
 )
+
+# ----------------------------------------------------------------------------
+# CPack Installer Configuration
+# ----------------------------------------------------------------------------
+
+# -- General Package Information --
+set(CPACK_PACKAGE_NAME "BlueConnect Desktop")
+set(CPACK_PACKAGE_VERSION "1.0.0")
+set(CPACK_PACKAGE_VENDOR "YourCompany Inc.")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "BlueConnect Desktop - Connect & Share Instantly")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://yourcompany.com/blueconnect")
+set(CPACK_PACKAGE_CONTACT "support@yourcompany.com")
+
+# -- License and Resources --
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/icon.png")
+
+# -- Install Rules --
+# This tells CPack what to install. The main executable target is 'BlueLinkManager_GUI'.
+install(TARGETS BlueLinkManager_GUI
+    BUNDLE DESTINATION .  # For macOS .app bundle
+    RUNTIME DESTINATION bin # For Windows/Linux executables
+    LIBRARY DESTINATION lib # For shared libraries
+    ARCHIVE DESTINATION lib # For static libraries
+)
+
+# Install resource files
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/"
+    DESTINATION share/resources
+)
+
+
+# -- macOS Specific Settings (DragNDrop DMG Generator) --
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+    # Add a symlink to the /Applications folder to the DMG for easy installation
+    set(CPACK_DMG_FILESYSTEM "APFS")
+    set(CPACK_DMG_FORMAT "UDBZ")
+    set(CPACK_DMG_APPLICATION_BUNDLE_FIRST "BlueLinkManager_GUI.app")
+endif()
+
+# -- Windows Specific Settings (NSIS Generator) --
+if(WIN32)
+    set(CPACK_GENERATOR "NSIS")
+    set(CPACK_NSIS_PACKAGE_NAME "BlueConnect Desktop")
+    set(CPACK_NSIS_INSTALLER_ICON_CODE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/icon.ico")
+    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/icon.ico")
+    set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/icon.ico")
+    # Create a start menu shortcut
+    set(CPACK_NSIS_CREATE_ICONS_EXTRA "CreateShortCut '\\$SMPROGRAMS\\BlueConnect Desktop.lnk' '\\$INSTDIR\\bin\\BlueLinkManager_GUI.exe'")
+endif()
+
+# -- Linux Specific Settings (DEB/RPM Generators) --
+if(UNIX AND NOT APPLE)
+    set(CPACK_GENERATOR "DEB;RPM")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "support@yourcompany.com")
+    set(CPACK_RPM_PACKAGE_LICENSE "Proprietary")
+endif()
+
+
+# -- Include the CPack module to enable packaging --
+include(CPack)
+
