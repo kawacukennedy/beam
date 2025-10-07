@@ -2,7 +2,7 @@
 use bluer::{Adapter, Device};
 
 #[cfg(target_os = "macos")]
-use corebluetooth_rs as cb;
+use corebluetooth as cb;
 
 #[cfg(target_os = "windows")]
 use winrt::windows::devices::bluetooth as bt;
