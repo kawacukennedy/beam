@@ -1,9 +1,9 @@
-use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, NewAead};
+use aes_gcm::{Aes256Gcm, Nonce, KeyInit};
+use aes_gcm::aead::Aead;
 use curve25519_dalek::{scalar::Scalar, montgomery::MontgomeryPoint};
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{EncodePrivateKey, EncodePublicKey, DecodePrivateKey, DecodePublicKey}, Pkcs1v15Encrypt};
+use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::EncodePublicKey};
 use sha2::{Sha256, Digest};
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, RngCore};
 use std::collections::HashMap;
 use zeroize::Zeroize;
 
@@ -18,7 +18,9 @@ pub struct CryptoManager {
 impl CryptoManager {
     pub fn new() -> Self {
         let mut rng = OsRng;
-        let ecdh_private = Scalar::random(&mut rng);
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        let ecdh_private = Scalar::from_bytes_mod_order(bytes);
         let ecdh_public = MontgomeryPoint::mul_base(&ecdh_private);
         let rsa_private = RsaPrivateKey::new(&mut rng, 4096).expect("Failed to generate RSA key");
         let rsa_public = RsaPublicKey::from(&rsa_private);
@@ -53,8 +55,7 @@ impl CryptoManager {
 
     pub fn encrypt_message(&mut self, session_id: &str, message: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let key = self.session_keys.get(session_id).ok_or("No session key")?;
-        let key = Key::from_slice(key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Invalid key")?;
         let nonce_bytes = self.generate_nonce(session_id);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher.encrypt(nonce, message).map_err(|e| e.to_string())?;
@@ -63,8 +64,7 @@ impl CryptoManager {
 
     pub fn decrypt_message(&mut self, session_id: &str, ciphertext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let key = self.session_keys.get(session_id).ok_or("No session key")?;
-        let key = Key::from_slice(key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Invalid key")?;
         let nonce_bytes = self.generate_nonce(session_id);
         let nonce = Nonce::from_slice(&nonce_bytes);
         let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| e.to_string())?;
@@ -96,7 +96,8 @@ impl Drop for CryptoManager {
     fn drop(&mut self) {
         // Zeroize sensitive data
         self.ecdh_private.zeroize();
-        self.rsa_private.zeroize();
+        // Note: RSA private key does not implement Zeroize; consider manual zeroization if needed
+        // self.rsa_private.zeroize();
         for key in self.session_keys.values_mut() {
             key.zeroize();
         }

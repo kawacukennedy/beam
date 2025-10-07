@@ -68,6 +68,7 @@ dependencies = [
  "rsa",
  "sha2",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
