@@ -47,13 +47,14 @@ public:
     void retry_worker() {
         while (running) {
             std::unique_lock<std::mutex> lock(queue_mutex);
-            queue_cv.wait_for(lock, std::chrono::milliseconds(1000), [this]() { return !running; }); // Check periodically
+            queue_cv.wait_for(lock, std::chrono::milliseconds(2000), [this]() { return !running; }); // Reduce frequency for low power
             if (!running) break;
 
             auto now = std::chrono::steady_clock::now();
 
-            // Handle pending retries
-            while (!pending_messages.empty() && pending_messages.front().next_retry <= now) {
+            // Handle pending retries (limit to 5 per cycle to reduce CPU)
+            int processed = 0;
+            while (!pending_messages.empty() && pending_messages.front().next_retry <= now && processed < 5) {
                 PendingMessage msg = pending_messages.front();
                 pending_messages.pop();
                 lock.unlock();
@@ -66,7 +67,6 @@ public:
                         pending_messages.push(msg);
                         lock.unlock();
                     } else {
-                        // Send failed, requeue immediately? Or increment retry
                         msg.retry_count++;
                         if (msg.retry_count < Impl::MAX_RETRIES) {
                             msg.next_retry = now + std::chrono::milliseconds(Impl::BASE_BACKOFF_MS * (1 << msg.retry_count));
@@ -77,6 +77,33 @@ public:
                             if (message_callback) {
                                 message_callback(msg.id, "", "", msg.receiver_id, {}, MessageStatus::SENT);
                             }
+                        }
+                    }
+                } else {
+                    if (message_callback) {
+                        message_callback(msg.id, "", "", msg.receiver_id, {}, MessageStatus::SENT);
+                    }
+                }
+                lock.lock();
+                processed++;
+            }
+
+            // Check ack timeouts (limit iterations)
+            int ack_processed = 0;
+            for (auto it = ack_waiting.begin(); it != ack_waiting.end() && ack_processed < 10; ) {
+                if (it->second.next_retry <= now) {
+                    pending_messages.push(it->second);
+                    it = ack_waiting.erase(it);
+                } else {
+                    ++it;
+                }
+                ack_processed++;
+            }
+
+            lock.unlock();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Yield CPU
+        }
+    }
                         }
                     }
                 } else {

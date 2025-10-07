@@ -74,10 +74,14 @@ static bool first_run = true;
                                                      backing:NSBackingStoreBuffered
                                                        defer:NO];
     [splash center];
-    NSImageView* imageView = [[NSImageView alloc] initWithFrame:splash.contentView.bounds];
-    // Assume splash.png is loaded
-    [splash.contentView addSubview:imageView];
+    NSTextField* label = [[NSTextField alloc] initWithFrame:NSMakeRect(150, 130, 100, 40)];
+    [label setStringValue:@"BlueBeam"];
+    [label setEditable:NO];
+    [label setBordered:NO];
+    [label setBackgroundColor:[NSColor clearColor]];
+    [splash.contentView addSubview:label];
     [splash makeKeyAndOrderFront:nil];
+    // Disable animation for low power
     [splash performSelector:@selector(close) withObject:nil afterDelay:0.3];
 }
 

@@ -100,8 +100,9 @@ public:
         file.seekg(0);
 
         uint64_t offset = 0;
+        const uint64_t SMALL_CHUNK_SIZE = 65536; // Reduce chunk size for low power devices
         while (offset < file_size) {
-            uint64_t chunk_size = std::min(CHUNK_SIZE, file_size - offset);
+            uint64_t chunk_size = std::min(SMALL_CHUNK_SIZE, file_size - offset);
             std::vector<uint8_t> data(chunk_size);
             file.read(reinterpret_cast<char*>(data.data()), chunk_size);
 
@@ -114,6 +115,7 @@ public:
 
             chunks.push_back(std::move(chunk));
             offset += chunk_size;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Yield CPU during chunking
         }
 
         return chunks;

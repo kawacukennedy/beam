@@ -102,28 +102,33 @@ Bluetooth::~Bluetooth() = default;
 
 void Bluetooth::scan() {
 #if defined(__APPLE__)
-    [pimpl->centralManager scanForPeripheralsWithServices:nil options:nil];
+    NSDictionary* options = @{CBCentralManagerScanOptionAllowDuplicatesKey: @NO}; // Reduce duplicates for efficiency
+    [pimpl->centralManager scanForPeripheralsWithServices:nil options:options];
 #elif defined(_WIN32)
-    // Win32 scan implementation
+    // Win32 scan implementation with reduced timeout
     BLUETOOTH_DEVICE_SEARCH_PARAMS searchParams = { sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS) };
     searchParams.fReturnAuthenticated = TRUE;
     searchParams.fReturnRemembered = TRUE;
     searchParams.fReturnUnknown = TRUE;
     searchParams.fReturnConnected = TRUE;
     searchParams.fIssueInquiry = TRUE;
-    searchParams.cTimeoutMultiplier = 5;
+    searchParams.cTimeoutMultiplier = 2; // Reduce timeout for low power
 
     BLUETOOTH_DEVICE_INFO deviceInfo = { sizeof(BLUETOOTH_DEVICE_INFO) };
     HBLUETOOTH_DEVICE_FIND hFind = BluetoothFindFirstDevice(&searchParams, &deviceInfo);
     if (hFind) {
         do {
             // Handle device found
+            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Yield CPU
         } while (BluetoothFindNextDevice(hFind, &deviceInfo));
         BluetoothFindDeviceClose(hFind);
     }
 #elif defined(__linux__)
-    // BlueZ scan via D-Bus
+    // BlueZ scan via D-Bus with low power mode
     DBusMessage* msg = dbus_message_new_method_call("org.bluez", "/", "org.bluez.Adapter1", "StartDiscovery");
+    DBusMessageIter args;
+    dbus_message_iter_init_append(msg, &args);
+    dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &"LowEnergy"); // Low power mode
     dbus_connection_send(pimpl->conn, msg, nullptr);
     dbus_message_unref(msg);
 #endif
