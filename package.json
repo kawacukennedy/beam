@@ -1,22 +1,79 @@
 {
-  "name": "bluebeamnative",
+  "name": "bluebeam",
   "version": "1.0.0",
-  "description": "**Cross-platform Bluetooth manager and chat/file transfer app for laptops using C++17 and Qt 6. Supports device discovery, pairing, secure chat, file transfer, and full offline operation with low-latency performance.**",
-  "main": "index.js",
-  "directories": {
-    "lib": "lib"
-  },
+  "description": "BlueBeam is a cross-platform peer-to-peer desktop application that enables users to discover, connect, chat, and share any type of files over Bluetooth without internet access.",
+  "main": "dist/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron .",
+    "dev": "concurrently \"npm run dev:react\" \"wait-on http://localhost:3000 && electron .\"",
+    "dev:react": "react-scripts start",
+    "build": "react-scripts build && electron-builder",
+    "build:react": "react-scripts build",
+    "test": "jest",
+    "test:backend": "mocha",
+    "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "electron": "^28.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^8.1.0",
+    "@reduxjs/toolkit": "^1.9.0",
+    "framer-motion": "^10.12.0",
+    "axios": "^1.4.0",
+    "sqlite3": "^5.1.0",
+    "crypto": "^1.0.1",
+    "fs-extra": "^11.1.0",
+    "@abandonware/noble": "^1.9.2-15",
+    "bluetooth-hci-socket": "^0.5.1",
+    "lucide-react": "^0.294.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "react-scripts": "^5.0.1",
+    "tailwindcss": "^3.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "electron-builder": "^24.0.0",
+    "concurrently": "^8.0.0",
+    "wait-on": "^7.0.0",
+    "jest": "^29.0.0",
+    "mocha": "^10.0.0",
+    "chai": "^4.3.0",
+    "eslint": "^8.0.0",
+    "typescript": "^4.9.0"
+  },
+  "build": {
+    "appId": "com.yourcompany.bluebeam.application",
+    "productName": "BlueBeam",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "msi"
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "rpm"]
+    }
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kawacukennedy/beam.git"
   },
-  "keywords": [],
+  "keywords": ["bluetooth", "peer-to-peer", "chat", "file-sharing", "cross-platform"],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/kawacukennedy/beam/issues"
   },
