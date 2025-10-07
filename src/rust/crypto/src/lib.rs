@@ -1,69 +1,106 @@
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, NewAead};
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::montgomery::MontgomeryPoint;
+use curve25519_dalek::{scalar::Scalar, montgomery::MontgomeryPoint};
 use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{EncodePrivateKey, EncodePublicKey, DecodePrivateKey, DecodePublicKey}, Pkcs1v15Encrypt};
 use sha2::{Sha256, Digest};
 use rand::rngs::OsRng;
 use std::collections::HashMap;
+use zeroize::Zeroize;
 
 pub struct CryptoManager {
-    private_key: RsaPrivateKey,
-    public_key: RsaPublicKey,
+    ecdh_private: Scalar,
+    ecdh_public: MontgomeryPoint,
+    rsa_private: RsaPrivateKey,
+    rsa_public: RsaPublicKey,
     session_keys: HashMap<String, [u8; 32]>,
 }
 
 impl CryptoManager {
     pub fn new() -> Self {
         let mut rng = OsRng;
-        let private_key = RsaPrivateKey::new(&mut rng, 4096).expect("Failed to generate RSA key");
-        let public_key = RsaPublicKey::from(&private_key);
+        let ecdh_private = Scalar::random(&mut rng);
+        let ecdh_public = MontgomeryPoint::mul_base(&ecdh_private);
+        let rsa_private = RsaPrivateKey::new(&mut rng, 4096).expect("Failed to generate RSA key");
+        let rsa_public = RsaPublicKey::from(&rsa_private);
 
         CryptoManager {
-            private_key,
-            public_key,
+            ecdh_private,
+            ecdh_public,
+            rsa_private,
+            rsa_public,
             session_keys: HashMap::new(),
         }
     }
 
-    pub fn get_public_key_pem(&self) -> String {
-        self.public_key.to_public_key_pem(Default::default()).unwrap()
+    pub fn get_ecdh_public_key(&self) -> &[u8; 32] {
+        self.ecdh_public.as_bytes()
     }
 
-    pub fn derive_shared_secret(&self, peer_public_key_pem: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-        let peer_public_key = RsaPublicKey::from_public_key_pem(peer_public_key_pem)?;
-        
-        // For simplicity, use a hash of both public keys as shared secret
-        // In real implementation, use proper ECDH
+    pub fn get_rsa_public_key_pem(&self) -> String {
+        self.rsa_public.to_public_key_pem(Default::default()).unwrap()
+    }
+
+    pub fn derive_shared_secret(&self, peer_ecdh_public: &[u8; 32]) -> [u8; 32] {
+        let peer_public = MontgomeryPoint(*peer_ecdh_public);
+        let shared_point = peer_public * self.ecdh_private;
         let mut hasher = Sha256::new();
-        hasher.update(self.get_public_key_pem());
-        hasher.update(peer_public_key_pem);
+        hasher.update(shared_point.as_bytes());
         let result = hasher.finalize();
         let mut secret = [0u8; 32];
         secret.copy_from_slice(&result);
-        Ok(secret)
+        secret
     }
 
-    pub fn encrypt_message(&self, shared_secret: &[u8; 32], message: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let key = Key::from_slice(shared_secret);
+    pub fn encrypt_message(&mut self, session_id: &str, message: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let key = self.session_keys.get(session_id).ok_or("No session key")?;
+        let key = Key::from_slice(key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(b"unique nonce"); // In production, use unique nonce
+        let nonce_bytes = self.generate_nonce(session_id);
+        let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher.encrypt(nonce, message).map_err(|e| e.to_string())?;
         Ok(ciphertext)
     }
 
-    pub fn decrypt_message(&self, shared_secret: &[u8; 32], ciphertext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let key = Key::from_slice(shared_secret);
+    pub fn decrypt_message(&mut self, session_id: &str, ciphertext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let key = self.session_keys.get(session_id).ok_or("No session key")?;
+        let key = Key::from_slice(key);
         let cipher = Aes256Gcm::new(key);
-        let nonce = Nonce::from_slice(b"unique nonce");
+        let nonce_bytes = self.generate_nonce(session_id);
+        let nonce = Nonce::from_slice(&nonce_bytes);
         let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| e.to_string())?;
         Ok(plaintext)
+    }
+
+    fn generate_nonce(&self, session_id: &str) -> [u8; 12] {
+        let mut hasher = Sha256::new();
+        hasher.update(session_id.as_bytes());
+        hasher.update(b"nonce");
+        let result = hasher.finalize();
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&result[..12]);
+        nonce
+    }
+
+    pub fn set_session_key(&mut self, session_id: String, key: [u8; 32]) {
+        self.session_keys.insert(session_id, key);
     }
 
     pub fn calculate_checksum(&self, data: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(data);
         format!("{:x}", hasher.finalize())
+    }
+}
+
+impl Drop for CryptoManager {
+    fn drop(&mut self) {
+        // Zeroize sensitive data
+        self.ecdh_private.zeroize();
+        self.rsa_private.zeroize();
+        for key in self.session_keys.values_mut() {
+            key.zeroize();
+        }
+        self.session_keys.clear();
     }
 }
 
@@ -77,4 +114,78 @@ pub extern "C" fn crypto_free(ptr: *mut CryptoManager) {
     if !ptr.is_null() {
         unsafe { Box::from_raw(ptr); }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_get_ecdh_public_key(ptr: *mut CryptoManager, out: *mut u8) {
+    let mgr = unsafe { &*ptr };
+    let key = mgr.get_ecdh_public_key();
+    unsafe { std::ptr::copy_nonoverlapping(key.as_ptr(), out, 32); }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_get_rsa_public_key_pem(ptr: *mut CryptoManager) -> *mut std::ffi::c_char {
+    let mgr = unsafe { &*ptr };
+    let pem = mgr.get_rsa_public_key_pem();
+    std::ffi::CString::new(pem).unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_derive_shared_secret(ptr: *mut CryptoManager, peer_public: *const u8, out: *mut u8) {
+    let mgr = unsafe { &*ptr };
+    let peer = unsafe { std::slice::from_raw_parts(peer_public, 32) };
+    let mut peer_arr = [0u8; 32];
+    peer_arr.copy_from_slice(peer);
+    let secret = mgr.derive_shared_secret(&peer_arr);
+    unsafe { std::ptr::copy_nonoverlapping(secret.as_ptr(), out, 32); }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_set_session_key(ptr: *mut CryptoManager, session_id: *const std::ffi::c_char, key: *const u8) {
+    let mgr = unsafe { &mut *ptr };
+    let session_id = unsafe { std::ffi::CStr::from_ptr(session_id).to_string_lossy().into_owned() };
+    let key_slice = unsafe { std::slice::from_raw_parts(key, 32) };
+    let mut key_arr = [0u8; 32];
+    key_arr.copy_from_slice(key_slice);
+    mgr.set_session_key(session_id, key_arr);
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_encrypt_message(ptr: *mut CryptoManager, session_id: *const std::ffi::c_char, data: *const u8, len: usize, out_len: *mut usize) -> *mut u8 {
+    let mgr = unsafe { &mut *ptr };
+    let session_id = unsafe { std::ffi::CStr::from_ptr(session_id).to_string_lossy().into_owned() };
+    let data_slice = unsafe { std::slice::from_raw_parts(data, len) };
+    match mgr.encrypt_message(&session_id, data_slice) {
+        Ok(encrypted) => {
+            unsafe { *out_len = encrypted.len(); }
+            let ptr = encrypted.as_ptr() as *mut u8;
+            std::mem::forget(encrypted);
+            ptr
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_decrypt_message(ptr: *mut CryptoManager, session_id: *const std::ffi::c_char, data: *const u8, len: usize, out_len: *mut usize) -> *mut u8 {
+    let mgr = unsafe { &mut *ptr };
+    let session_id = unsafe { std::ffi::CStr::from_ptr(session_id).to_string_lossy().into_owned() };
+    let data_slice = unsafe { std::slice::from_raw_parts(data, len) };
+    match mgr.decrypt_message(&session_id, data_slice) {
+        Ok(decrypted) => {
+            unsafe { *out_len = decrypted.len(); }
+            let ptr = decrypted.as_ptr() as *mut u8;
+            std::mem::forget(decrypted);
+            ptr
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_calculate_checksum(ptr: *mut CryptoManager, data: *const u8, len: usize) -> *mut std::ffi::c_char {
+    let mgr = unsafe { &*ptr };
+    let data_slice = unsafe { std::slice::from_raw_parts(data, len) };
+    let checksum = mgr.calculate_checksum(data_slice);
+    std::ffi::CString::new(checksum).unwrap().into_raw()
 }

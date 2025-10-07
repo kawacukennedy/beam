@@ -28,6 +28,7 @@ ExternalProject_Add(
     CONFIGURE_COMMAND ""
     BUILD_COMMAND cargo build --release
     INSTALL_COMMAND ""
+    BUILD_IN_SOURCE 1
     BUILD_ALWAYS ON
 )
 ExternalProject_Add(
@@ -36,6 +37,7 @@ ExternalProject_Add(
     CONFIGURE_COMMAND ""
     BUILD_COMMAND cargo build --release
     INSTALL_COMMAND ""
+    BUILD_IN_SOURCE 1
     BUILD_ALWAYS ON
 )
 
@@ -54,6 +56,11 @@ target_link_libraries(crypto ${CMAKE_BINARY_DIR}/rust_crypto-prefix/src/rust_cry
 add_library(bluetooth src/cpp/bluetooth/bluetooth.cpp)
 add_dependencies(bluetooth rust_bluetooth)
 target_link_libraries(bluetooth ${CMAKE_BINARY_DIR}/rust_bluetooth-prefix/src/rust_bluetooth-build/release/libbluetooth.a)
+
+add_library(settings src/cpp/settings/settings.cpp)
+
+add_library(auto_update src/cpp/auto_update/auto_update.cpp)
+target_link_libraries(auto_update curl)
 
 add_library(messaging src/cpp/messaging/messaging.cpp)
 target_link_libraries(messaging bluetooth crypto)
@@ -89,8 +96,19 @@ set(CPACK_PACKAGE_VENDOR "BlueBeam Team")
 
 if(APPLE)
     set(CPACK_GENERATOR "DragNDrop")
+    # Code signing
+    add_custom_command(TARGET BlueBeam POST_BUILD
+        COMMAND codesign --sign "Developer ID Application" --deep --force --verbose $<TARGET_FILE:BlueBeam>
+    )
 elseif(WIN32)
     set(CPACK_GENERATOR "NSIS")
+    # Code signing
+    find_program(SIGNTool_EXECUTABLE signtool)
+    if(SIGNTool_EXECUTABLE)
+        add_custom_command(TARGET BlueBeam POST_BUILD
+            COMMAND ${SIGNTool_EXECUTABLE} sign /f cert.pfx /p password $<TARGET_FILE:BlueBeam>
+        )
+    endif()
 elseif(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB;RPM")
 endif()
