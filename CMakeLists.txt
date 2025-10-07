@@ -87,6 +87,8 @@ endif()
 
 # Install
 install(TARGETS BlueBeam DESTINATION bin)
+install(DIRECTORY ../resources/ DESTINATION share/bluebeam FILES_MATCHING PATTERN "*")
+install(FILES ../README.md ../LICENSE DESTINATION share/doc/bluebeam)
 
 # CPack for installers
 set(CPACK_PACKAGE_NAME "BlueBeam")
