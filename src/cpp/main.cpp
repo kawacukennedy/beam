@@ -5,6 +5,7 @@
 #include "messaging/messaging.h"
 #include "file_transfer/file_transfer.h"
 #include "settings/settings.h"
+#include "auto_update/auto_update.h"
 #include "ui/ui.h"
 #include <thread>
 #include <chrono>
@@ -47,11 +48,8 @@ int main(int argc, char* argv[]) {
         return bluetooth.send_data(device_id, data);
     });
 
-    // Power-aware main loop
-    while (true) {
-        ui.run();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Yield CPU in main loop
-    }
+    // Start the UI main loop
+    ui.run();
 
     return 0;
 }

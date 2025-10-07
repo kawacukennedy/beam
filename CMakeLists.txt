@@ -7,8 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Compiler flags per platform
 if(APPLE)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -Wall -Wextra -march=native")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -Wextra -march=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -Wall -Wextra -march=native")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall -Wextra -march=native")
+
+include_directories(src/cpp)
 elseif(WIN32)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /O2 /W4 /permissive-")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2 /W4 /permissive-")
@@ -51,11 +53,11 @@ target_link_libraries(database sqlite3 Threads::Threads)
 
 add_library(crypto src/cpp/crypto/crypto.cpp)
 add_dependencies(crypto rust_crypto)
-target_link_libraries(crypto ${CMAKE_BINARY_DIR}/rust_crypto-prefix/src/rust_crypto-build/release/libcrypto.a)
+target_link_libraries(crypto ${CMAKE_SOURCE_DIR}/src/rust/crypto/target/release/libbluebeam_crypto.a)
 
 add_library(bluetooth src/cpp/bluetooth/bluetooth.cpp)
 add_dependencies(bluetooth rust_bluetooth)
-target_link_libraries(bluetooth ${CMAKE_BINARY_DIR}/rust_bluetooth-prefix/src/rust_bluetooth-build/release/libbluetooth.a)
+target_link_libraries(bluetooth ${CMAKE_SOURCE_DIR}/src/rust/bluetooth/target/release/libbluebeam_bluetooth.a)
 
 add_library(settings src/cpp/settings/settings.cpp)
 
@@ -97,11 +99,11 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Offline Bluetooth Chat and File Sharing")
 set(CPACK_PACKAGE_VENDOR "BlueBeam Team")
 
 if(APPLE)
-    set(CPACK_GENERATOR "DragNDrop")
-    # Code signing
-    add_custom_command(TARGET BlueBeam POST_BUILD
-        COMMAND codesign --sign "Developer ID Application" --deep --force --verbose $<TARGET_FILE:BlueBeam>
-    )
+    set(CPACK_GENERATOR "ZIP")
+    # Code signing disabled for development
+    # add_custom_command(TARGET BlueBeam POST_BUILD
+    #     COMMAND codesign --sign "Developer ID Application" --deep --force --verbose $<TARGET_FILE:BlueBeam>
+    # )
 elseif(WIN32)
     set(CPACK_GENERATOR "NSIS")
     # Code signing

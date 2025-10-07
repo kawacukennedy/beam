@@ -3,6 +3,9 @@ name = "bluebeam_crypto"
 version = "1.0.0"
 edition = "2021"
 
+[lib]
+crate-type = ["staticlib"]
+
 [dependencies]
 aes-gcm = "0.10"
 curve25519-dalek = "4.1"

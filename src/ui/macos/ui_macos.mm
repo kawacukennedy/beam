@@ -1,8 +1,9 @@
 #import <Cocoa/Cocoa.h>
-#include "ui.h"
+#include "ui/ui.h"
 #include <iostream>
 #include <vector>
 #include <string>
+#include <functional>
 #include "../database/database.h"
 #include "../bluetooth/bluetooth.h"
 #include "../crypto/crypto.h"
@@ -19,11 +20,12 @@ static std::string selected_device_id;
 static std::string current_conversation_id;
 static bool first_run = true;
 
-@interface BlueBeamAppDelegate : NSObject <NSApplicationDelegate>
+@interface BlueBeamAppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource>
 @property (strong) NSWindow* window;
 @property (strong) NSTextField* statusLabel;
 @property (strong) NSButton* scanButton;
 @property (strong) NSTableView* deviceTable;
+@property (strong) NSMutableArray* deviceNames;
 @property (strong) NSTextView* chatView;
 @property (strong) NSTextField* messageField;
 @property (strong) NSProgressIndicator* progressBar;
@@ -49,9 +51,9 @@ static bool first_run = true;
         return bt->send_data(device_id, data);
     });
     messaging->set_message_callback([self](const std::string& id, const std::string& conversation_id,
-                                          const std::string& sender_id, const std::string& receiver_id,
-                                          const std::vector<uint8_t>& content, MessageStatus status) {
-        [self onMessageReceived:id conversation:conversation_id sender:sender_id receiver:receiver_id content:content status:status];
+                                           const std::string& sender_id, const std::string& receiver_id,
+                                           const std::vector<uint8_t>& content, MessageStatus status) {
+        [self onMessageReceived:[NSString stringWithUTF8String:id.c_str()] conversation:[NSString stringWithUTF8String:conversation_id.c_str()] sender:[NSString stringWithUTF8String:sender_id.c_str()] receiver:[NSString stringWithUTF8String:receiver_id.c_str()] content:[NSData dataWithBytes:content.data() length:content.size()] status:status];
     });
     ft->set_data_sender([bt](const std::string& device_id, const std::vector<uint8_t>& data) {
         return bt->send_data(device_id, data);
@@ -228,6 +230,12 @@ static bool first_run = true;
     [scrollView setDocumentView:self.deviceTable];
     [contentView addSubview:scrollView];
 
+    NSTableColumn* column = [[NSTableColumn alloc] initWithIdentifier:@"name"];
+    [column setTitle:@"Device Name"];
+    [self.deviceTable addTableColumn:column];
+    [self.deviceTable setDataSource:self];
+    self.deviceNames = [[NSMutableArray alloc] init];
+
     // Chat view (hidden initially)
     self.chatView = [[NSTextView alloc] initWithFrame:NSMakeRect(20, 100, 760, 500)];
     [self.chatView setHidden:YES];
@@ -265,6 +273,7 @@ static bool first_run = true;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2000 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
         [self.statusLabel setStringValue:@"Scan complete"];
         // Add fake devices to table
+        [self.deviceNames addObject:@"Fake Device 1"];
         [self.deviceTable reloadData];
     });
 }
@@ -355,12 +364,17 @@ static bool first_run = true;
     }];
 }
 
-- (void)onMessageReceived:(const std::string&)id conversation:(const std::string&)conversation_id
-                   sender:(const std::string&)sender_id receiver:(const std::string&)receiver_id
-                   content:(const std::vector<uint8_t>&)content status:(MessageStatus)status {
-    if (conversation_id == current_conversation_id) {
-        std::string msg(content.begin(), content.end());
-        NSAttributedString* attrStr = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%s: %s\n", sender_id.c_str(), msg.c_str()]];
+- (void)onMessageReceived:(NSString*)messageId conversation:(NSString*)conversation_id
+                   sender:(NSString*)sender_id receiver:(NSString*)receiver_id
+                   content:(NSData*)contentData status:(MessageStatus)status {
+    std::string convId = [conversation_id UTF8String];
+    std::string sendId = [sender_id UTF8String];
+    const uint8_t* bytes = (const uint8_t*)[contentData bytes];
+    size_t length = [contentData length];
+    std::vector<uint8_t> content(bytes, bytes + length);
+    std::string msg(content.begin(), content.end());
+    if (convId == current_conversation_id) {
+        NSAttributedString* attrStr = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%s: %s\n", sendId.c_str(), msg.c_str()]];
         [[self.chatView textStorage] appendAttributedString:attrStr];
     }
 }
@@ -381,6 +395,14 @@ static bool first_run = true;
         }
         // If failed, mark offline
     }
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
+    return [self.deviceNames count];
+}
+
+- (id)tableView:(NSTableView *)tableView objectValueForTableColumn:(NSTableColumn *)tableColumn row:(NSInteger)row {
+    return [self.deviceNames objectAtIndex:row];
 }
 
 @end

@@ -1,4 +1,5 @@
 #include "bluetooth.h"
+#include <unordered_map>
 
 #if defined(__APPLE__)
 #include <CoreBluetooth/CoreBluetooth.h>
