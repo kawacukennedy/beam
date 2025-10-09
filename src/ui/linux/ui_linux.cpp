@@ -9,6 +9,7 @@
 #include "bluetooth/bluetooth.h"
 #include "messaging/messaging.h"
 #include "file_transfer/file_transfer.h"
+#include "settings/settings.h"
 
 class UI::Impl {
 public:
@@ -17,6 +18,7 @@ public:
     std::unique_ptr<Crypto> crypto;
     std::unique_ptr<Messaging> messaging;
     std::unique_ptr<FileTransfer> ft;
+    std::unique_ptr<Settings> settings;
     std::string current_device_id;
 
     Impl() {
@@ -29,6 +31,7 @@ public:
         crypto = std::make_unique<Crypto>();
         messaging = std::make_unique<Messaging>(*crypto);
         ft = std::make_unique<FileTransfer>(*crypto);
+        settings = std::make_unique<Settings>();
         gtk_init(NULL, NULL);
 
         window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -84,6 +87,9 @@ public:
         g_signal_connect(file_button, "clicked", G_CALLBACK(on_file_clicked), this);
         gtk_box_pack_start(GTK_BOX(hbox_input), file_button, FALSE, FALSE, 0);
 
+        progress_bar = gtk_progress_bar_new();
+        gtk_box_pack_start(GTK_BOX(vbox), progress_bar, FALSE, FALSE, 0);
+
         // Set up callbacks
         bt->set_receive_callback([this](const std::string& device_id, const std::vector<uint8_t>& data) {
             messaging->receive_data(device_id, data);
@@ -102,6 +108,10 @@ public:
                 GtkTextIter end;
                 gtk_text_buffer_get_end_iter(buffer, &end);
                 gtk_text_buffer_insert(buffer, &end, display.c_str(), -1);
+
+                // Save to database
+                Message db_msg{id, conversation_id, sender_id, receiver_id, content, std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()), status == MessageStatus::SENT ? "sent" : "received"};
+                db->add_message(db_msg);
             }
         });
         ft->set_data_sender([this](const std::string& device_id, const std::vector<uint8_t>& data) {
@@ -118,6 +128,49 @@ public:
                                                    "Welcome to BlueBeam!\n\n1. Click Scan Devices to find nearby Bluetooth devices.\n2. Select a device and click Connect.\n3. Start chatting or sending files.\n\nEnjoy secure Bluetooth communication!");
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
+    }
+
+    void showSettingsDialog() {
+        GtkWidget* dialog = gtk_dialog_new_with_buttons("Settings", GTK_WINDOW(window), GTK_DIALOG_MODAL,
+                                                        "Save", GTK_RESPONSE_ACCEPT, "Cancel", GTK_RESPONSE_CANCEL, NULL);
+
+        GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+        GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+        gtk_container_add(GTK_CONTAINER(content), vbox);
+
+        GtkWidget* name_label = gtk_label_new("User Name:");
+        gtk_box_pack_start(GTK_BOX(vbox), name_label, FALSE, FALSE, 0);
+
+        name_entry = gtk_entry_new();
+        gtk_box_pack_start(GTK_BOX(vbox), name_entry, FALSE, FALSE, 0);
+
+        // Load current settings
+        std::string name = settings->get_user_name();
+        gtk_entry_set_text(GTK_ENTRY(name_entry), name.c_str());
+
+        gtk_widget_show_all(dialog);
+
+        if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+            const char* name = gtk_entry_get_text(GTK_ENTRY(name_entry));
+            settings->set_user_name(name);
+            settings->save();
+        }
+
+        gtk_widget_destroy(dialog);
+    }
+
+    void loadMessageHistory() {
+        if (current_device_id.empty()) return;
+
+        auto messages = db->get_messages(current_device_id);
+        GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(chat_view));
+        gtk_text_buffer_set_text(buffer, "", -1);
+        for (const auto& msg : messages) {
+            std::string display = msg.sender_id + ": " + std::string(msg.content.begin(), msg.content.end()) + "\n";
+            GtkTextIter end;
+            gtk_text_buffer_get_end_iter(buffer, &end);
+            gtk_text_buffer_insert(buffer, &end, display.c_str(), -1);
+        }
     }
 
     void run() {
@@ -152,9 +205,10 @@ private:
             const char* text = gtk_label_get_text(GTK_LABEL(child));
             std::string name = text;
             std::string device_id = impl->bt->get_device_id_from_name(name);
-            if (impl->bt->connect(device_id)) {
-                impl->current_device_id = device_id;
-            }
+                if (impl->bt->connect(device_id)) {
+                    impl->current_device_id = device_id;
+                    impl->loadMessageHistory();
+                }
         }
     }
 
@@ -191,12 +245,20 @@ private:
             std::string path = filename;
             g_free(filename);
             if (!impl->current_device_id.empty()) {
+                gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(impl->progress_bar), 0.0);
                 impl->ft->send_file(path, impl->current_device_id,
-                    [](uint64_t sent, uint64_t total) {
-                        // Update progress
+                    [impl](uint64_t sent, uint64_t total) {
+                        double fraction = total > 0 ? (double)sent / total : 0.0;
+                        gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(impl->progress_bar), fraction);
                     },
-                    [](bool success, const std::string& error) {
-                        // Handle completion
+                    [impl](bool success, const std::string& error) {
+                        gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(impl->progress_bar), 1.0);
+                        GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(impl->window), GTK_DIALOG_MODAL,
+                                                                   success ? GTK_MESSAGE_INFO : GTK_MESSAGE_ERROR,
+                                                                   GTK_BUTTONS_OK,
+                                                                   success ? "File sent successfully!" : ("File send failed: " + error).c_str());
+                        gtk_dialog_run(GTK_DIALOG(dialog));
+                        gtk_widget_destroy(dialog);
                     });
             }
         }
@@ -205,9 +267,7 @@ private:
 
     static void on_settings_clicked(GtkWidget* widget, gpointer data) {
         UI::Impl* impl = static_cast<UI::Impl*>(data);
-        GtkWidget* dialog = gtk_message_dialog_new(GTK_WINDOW(impl->window), GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "Settings not implemented yet.");
-        gtk_dialog_run(GTK_DIALOG(dialog));
-        gtk_widget_destroy(dialog);
+        impl->showSettingsDialog();
     }
 
     GtkWidget* window;
@@ -219,6 +279,8 @@ private:
     GtkWidget* message_entry;
     GtkWidget* send_button;
     GtkWidget* file_button;
+    GtkWidget* name_entry;
+    GtkWidget* progress_bar;
 };
 
 UI::UI() : pimpl(std::make_unique<Impl>()) {}

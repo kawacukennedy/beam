@@ -10,6 +10,7 @@
 #include "bluetooth/bluetooth.h"
 #include "messaging/messaging.h"
 #include "file_transfer/file_transfer.h"
+#include "settings/settings.h"
 
 class UI::Impl {
 public:
@@ -18,6 +19,7 @@ public:
     std::unique_ptr<Crypto> crypto;
     std::unique_ptr<Messaging> messaging;
     std::unique_ptr<FileTransfer> ft;
+    std::unique_ptr<Settings> settings;
     std::string current_device_id;
 
     Impl() {
@@ -29,6 +31,7 @@ public:
         crypto = std::make_unique<Crypto>();
         messaging = std::make_unique<Messaging>(*crypto);
         ft = std::make_unique<FileTransfer>(*crypto);
+        settings = std::make_unique<Settings>();
         WNDCLASS wc = {0};
         wc.lpfnWndProc = WndProc;
         wc.hInstance = GetModuleHandle(NULL);
@@ -48,10 +51,18 @@ public:
         CreateWindow("BUTTON", "Send", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 630, 460, 70, 30, hwnd, (HMENU)5, wc.hInstance, NULL);
         CreateWindow("BUTTON", "Send File", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 710, 460, 70, 30, hwnd, (HMENU)6, wc.hInstance, NULL);
 
+        progress_bar = CreateWindow(PROGRESS_CLASS, "", WS_VISIBLE | WS_CHILD, 10, 500, 760, 20, hwnd, (HMENU)8, wc.hInstance, NULL);
+
         // Set up callbacks
         bt->set_receive_callback([this](const std::string& device_id, const std::vector<uint8_t>& data) {
             messaging->receive_data(device_id, data);
             ft->receive_packet(device_id, data);
+        });
+        bt->set_disconnect_callback([this](const std::string& device_id) {
+            if (device_id == current_device_id) {
+                current_device_id.clear();
+                MessageBox(hwnd, "Device disconnected", "BlueBeam", MB_OK | MB_ICONWARNING);
+            }
         });
         messaging->set_bluetooth_sender([this](const std::string& device_id, const std::vector<uint8_t>& data) {
             return bt->send_data(device_id, data);
@@ -67,6 +78,10 @@ public:
                 std::string chat = chat_buffer;
                 chat += display;
                 SetWindowText(chat_view, chat.c_str());
+
+                // Save to database
+                Message db_msg{id, conversation_id, sender_id, receiver_id, content, std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()), status == MessageStatus::SENT ? "sent" : "received"};
+                db->add_message(db_msg);
             }
         });
         ft->set_data_sender([this](const std::string& device_id, const std::vector<uint8_t>& data) {
@@ -83,6 +98,48 @@ public:
         MessageBox(NULL, "Welcome to BlueBeam!\n\n1. Click Scan Devices to find nearby Bluetooth devices.\n2. Select a device and click Connect.\n3. Start chatting or sending files.\n\nEnjoy secure Bluetooth communication!", "BlueBeam", MB_OK | MB_ICONINFORMATION);
     }
 
+    void showSettingsDialog() {
+        if (settings_hwnd) {
+            SetFocus(settings_hwnd);
+            return;
+        }
+
+        // Register settings window class
+        WNDCLASS wc = {0};
+        wc.lpfnWndProc = SettingsProc;
+        wc.hInstance = GetModuleHandle(NULL);
+        wc.lpszClassName = "BlueBeamSettings";
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        RegisterClass(&wc);
+
+        // Create settings dialog
+        settings_hwnd = CreateWindow("BlueBeamSettings", "Settings", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, hwnd, NULL, GetModuleHandle(NULL), NULL);
+
+        CreateWindow("STATIC", "User Name:", WS_VISIBLE | WS_CHILD, 20, 20, 80, 20, settings_hwnd, NULL, GetModuleHandle(NULL), NULL);
+        name_edit = CreateWindow("EDIT", "", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 110, 20, 200, 20, settings_hwnd, (HMENU)101, GetModuleHandle(NULL), NULL);
+
+        CreateWindow("BUTTON", "Save", WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 150, 60, 80, 30, settings_hwnd, (HMENU)102, GetModuleHandle(NULL), NULL);
+        CreateWindow("BUTTON", "Cancel", WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON, 250, 60, 80, 30, settings_hwnd, (HMENU)103, GetModuleHandle(NULL), NULL);
+
+        // Load current settings
+        std::string name = settings->get_user_name();
+        SetWindowText(name_edit, name.c_str());
+
+        ShowWindow(settings_hwnd, SW_SHOW);
+    }
+
+    void loadMessageHistory() {
+        if (current_device_id.empty()) return;
+
+        auto messages = db->get_messages(current_device_id);
+        std::string chat_text;
+        for (const auto& msg : messages) {
+            std::string display = msg.sender_id + ": " + std::string(msg.content.begin(), msg.content.end()) + "\r\n";
+            chat_text += display;
+        }
+        SetWindowText(chat_view, chat_text.c_str());
+    }
+
     void run() {
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
@@ -95,6 +152,36 @@ public:
     }
 
 private:
+    static LRESULT CALLBACK SettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        UI::Impl* impl = reinterpret_cast<UI::Impl*>(GetWindowLongPtr(GetParent(hwnd), GWLP_USERDATA));
+        switch (msg) {
+            case WM_COMMAND:
+                if (impl) {
+                    switch (LOWORD(wParam)) {
+                        case 102: // Save
+                        {
+                            char buffer[256];
+                            GetWindowText(impl->name_edit, buffer, sizeof(buffer));
+                            impl->settings->set_user_name(buffer);
+                            impl->settings->save();
+                            DestroyWindow(hwnd);
+                        }
+                        break;
+                        case 103: // Cancel
+                            DestroyWindow(hwnd);
+                            break;
+                    }
+                }
+                break;
+            case WM_DESTROY:
+                impl->settings_hwnd = NULL;
+                break;
+            default:
+                return DefWindowProc(hwnd, msg, wParam, lParam);
+        }
+        return 0;
+    }
+
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         UI::Impl* impl = reinterpret_cast<UI::Impl*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
         switch (msg) {
@@ -122,6 +209,7 @@ private:
                                 std::string device_id = impl->bt->get_device_id_from_name(name);
                         if (impl->bt->connect(device_id)) {
                             impl->current_device_id = device_id;
+                            impl->loadMessageHistory();
                             // Update status
                         }
                             }
@@ -167,19 +255,27 @@ private:
                             if (GetOpenFileName(&ofn) == TRUE) {
                                 std::string path = szFile;
                                 if (!impl->current_device_id.empty()) {
+                                    SendMessage(impl->progress_bar, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
+                                    SendMessage(impl->progress_bar, PBM_SETPOS, 0, 0);
                                     impl->ft->send_file(path, impl->current_device_id,
-                                        [](uint64_t sent, uint64_t total) {
-                                            // Update progress
+                                        [impl](uint64_t sent, uint64_t total) {
+                                            int percent = total > 0 ? (sent * 100) / total : 0;
+                                            SendMessage(impl->progress_bar, PBM_SETPOS, percent, 0);
                                         },
-                                        [](bool success, const std::string& error) {
-                                            // Handle completion
+                                        [impl](bool success, const std::string& error) {
+                                            SendMessage(impl->progress_bar, PBM_SETPOS, 100, 0);
+                                            if (success) {
+                                                MessageBox(impl->hwnd, "File sent successfully!", "BlueBeam", MB_OK | MB_ICONINFORMATION);
+                                            } else {
+                                                MessageBox(impl->hwnd, ("File send failed: " + error).c_str(), "BlueBeam", MB_OK | MB_ICONERROR);
+                                            }
                                         });
                                 }
                             }
                         }
                         break;
                         case 7: // Settings
-                            MessageBox(impl->hwnd, "Settings not implemented yet.", "BlueBeam", MB_OK);
+                            impl->showSettingsDialog();
                             break;
                     }
                 }
@@ -197,6 +293,9 @@ private:
     HWND device_list;
     HWND chat_view;
     HWND message_entry;
+    HWND settings_hwnd;
+    HWND name_edit;
+    HWND progress_bar;
 };
 
 UI::UI() : pimpl(std::make_unique<Impl>()) {}

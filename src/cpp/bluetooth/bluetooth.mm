@@ -24,6 +24,14 @@
     [peripheral discoverServices:nil];
 }
 
+- (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
+    std::string device_id = [[peripheral.identifier UUIDString] UTF8String];
+    // Handle disconnection
+    if (self.bluetooth) {
+        self.bluetooth->call_disconnect_callback(device_id);
+    }
+}
+
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
     if (!error) {
         for (CBService *service in peripheral.services) {
@@ -63,6 +71,7 @@ public:
     CBCentralManager* centralManager;
     BluetoothDelegate* delegate;
     std::function<void(const std::string& device_id, const std::vector<uint8_t>& data)> receive_callback;
+    std::function<void(const std::string& device_id)> disconnect_callback;
     std::unordered_map<std::string, CBPeripheral*> connections;
     std::unordered_map<std::string, CBPeripheral*> discovered_devices;
     std::unordered_map<std::string, std::string> name_to_id;
@@ -124,6 +133,16 @@ bool Bluetooth::send_data(const std::string& device_id, const std::vector<uint8_
 
 void Bluetooth::set_receive_callback(std::function<void(const std::string& device_id, const std::vector<uint8_t>& data)> callback) {
     pimpl->receive_callback = callback;
+}
+
+void Bluetooth::set_disconnect_callback(std::function<void(const std::string& device_id)> callback) {
+    pimpl->disconnect_callback = callback;
+}
+
+void Bluetooth::call_disconnect_callback(const std::string& device_id) {
+    if (pimpl->disconnect_callback) {
+        pimpl->disconnect_callback(device_id);
+    }
 }
 
 std::vector<std::string> Bluetooth::get_discovered_devices() {

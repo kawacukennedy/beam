@@ -10,12 +10,14 @@
 #include "crypto/crypto.h"
 #include "messaging/messaging.h"
 #include "file_transfer/file_transfer.h"
+#include "settings/settings.h"
 
 static Database* db = nullptr;
 static Bluetooth* bt = nullptr;
 static Crypto* crypto = nullptr;
 static Messaging* messaging = nullptr;
 static FileTransfer* ft = nullptr;
+static Settings* settings = nullptr;
 
 static std::string selected_device_id;
 static std::string current_conversation_id;
@@ -34,7 +36,6 @@ std::string generate_id() {
 @property (strong) NSTextView* chatView;
 @property (strong) NSTextField* messageField;
 @property (strong) NSProgressIndicator* progressBar;
-@property (strong) NSWindow* progressWindow;
 @property (strong) NSWindow* splashWindow;
 @end
 
@@ -47,6 +48,7 @@ std::string generate_id() {
     crypto = new Crypto();
     messaging = new Messaging(*crypto);
     ft = new FileTransfer(*crypto);
+    settings = new Settings();
 
     // Set up callbacks
     bt->set_receive_callback([self](const std::string& device_id, const std::vector<uint8_t>& data) {
@@ -63,6 +65,11 @@ std::string generate_id() {
     });
     ft->set_data_sender([](const std::string& device_id, const std::vector<uint8_t>& data) {
         return bt->send_data(device_id, data);
+    });
+    bt->set_disconnect_callback([self](const std::string& device_id) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self onDeviceDisconnected:device_id];
+        });
     });
     ft->set_incoming_file_callback([self](const std::string& filename, uint64_t size, auto response) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -302,9 +309,60 @@ std::string generate_id() {
     [self.messageField setHidden:NO];
 }
 
-- (void)showSettings:(id)sender {
-    // TODO: Implement settings view
-}
+ - (void)showSettings:(id)sender {
+     NSWindow* settingsWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 200)
+                                                           styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
+                                                             backing:NSBackingStoreBuffered
+                                                               defer:NO];
+     [settingsWindow setTitle:@"Settings"];
+     [settingsWindow center];
+
+     NSTextField* nameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 140, 80, 24)];
+     [nameLabel setStringValue:@"User Name:"];
+     [nameLabel setEditable:NO];
+     [nameLabel setBordered:NO];
+     [nameLabel setBackgroundColor:[NSColor clearColor]];
+     [[settingsWindow contentView] addSubview:nameLabel];
+
+     NSTextField* nameField = [[NSTextField alloc] initWithFrame:NSMakeRect(110, 140, 270, 24)];
+     std::string name = settings->get_user_name();
+     [nameField setStringValue:[NSString stringWithUTF8String:name.c_str()]];
+     [nameField setTag:1]; // Tag for identification
+     [[settingsWindow contentView] addSubview:nameField];
+
+     NSButton* saveButton = [[NSButton alloc] initWithFrame:NSMakeRect(150, 50, 80, 32)];
+     [saveButton setTitle:@"Save"];
+     [saveButton setTarget:self];
+     [saveButton setAction:@selector(saveSettings:)];
+     [[settingsWindow contentView] addSubview:saveButton];
+
+     NSButton* cancelButton = [[NSButton alloc] initWithFrame:NSMakeRect(250, 50, 80, 32)];
+     [cancelButton setTitle:@"Cancel"];
+     [cancelButton setTarget:self];
+     [cancelButton setAction:@selector(cancelSettings:)];
+     [[settingsWindow contentView] addSubview:cancelButton];
+
+     [settingsWindow makeKeyAndOrderFront:nil];
+ }
+
+ - (void)saveSettings:(id)sender {
+     NSWindow* window = [sender window];
+     NSArray* subviews = [[window contentView] subviews];
+     for (NSView* view in subviews) {
+         if ([view isKindOfClass:[NSTextField class]] && [view tag] == 1) {
+             NSTextField* field = (NSTextField*)view;
+             std::string name = [[field stringValue] UTF8String];
+             settings->set_user_name(name);
+             settings->save();
+             break;
+         }
+     }
+     [window close];
+ }
+
+ - (void)cancelSettings:(id)sender {
+     [[sender window] close];
+ }
 
 
 
@@ -333,21 +391,24 @@ std::string generate_id() {
         NSURL* url = [[panel URLs] objectAtIndex:0];
         std::string path = [[url path] UTF8String];
         ft->send_file(path, selected_device_id,
-                      [self](uint64_t sent, uint64_t total) {
-                          // Update progress
-                          dispatch_async(dispatch_get_main_queue(), ^{
-                              [self.statusLabel setStringValue:[NSString stringWithFormat:@"Sending file: %llu/%llu", sent, total]];
-                          });
-                      },
-                      [self](bool success, const std::string& error) {
-                          dispatch_async(dispatch_get_main_queue(), ^{
-                              if (success) {
-                                  [self.statusLabel setStringValue:@"File sent successfully"];
-                              } else {
-                                  [self.statusLabel setStringValue:[NSString stringWithFormat:@"File send failed: %s", error.c_str()]];
-                              }
-                          });
-                      });
+                       [self](uint64_t sent, uint64_t total) {
+                           // Update progress
+                           dispatch_async(dispatch_get_main_queue(), ^{
+                               double percent = total > 0 ? (double)sent / total * 100.0 : 0.0;
+                               [self.progressBar setDoubleValue:percent];
+                               [self.statusLabel setStringValue:[NSString stringWithFormat:@"Sending file: %llu/%llu", sent, total]];
+                           });
+                       },
+                       [self](bool success, const std::string& error) {
+                           dispatch_async(dispatch_get_main_queue(), ^{
+                               [self.progressBar setDoubleValue:100.0];
+                               if (success) {
+                                   [self.statusLabel setStringValue:@"File sent successfully"];
+                               } else {
+                                   [self.statusLabel setStringValue:[NSString stringWithFormat:@"File send failed: %s", error.c_str()]];
+                               }
+                           });
+                       });
     }
 }
 
@@ -467,28 +528,50 @@ std::string generate_id() {
     [[self.window contentView] addSubview:sendFileButton];
 
     // Create status label
-    self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 460, 780, 20)];
+    self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 480, 780, 20)];
     [self.statusLabel setEditable:NO];
     [self.statusLabel setStringValue:@"Ready"];
     [[self.window contentView] addSubview:self.statusLabel];
 
+    // Create progress bar
+    self.progressBar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(10, 460, 780, 20)];
+    [self.progressBar setStyle:NSProgressIndicatorStyleBar];
+    [self.progressBar setIndeterminate:NO];
+    [self.progressBar setMinValue:0.0];
+    [self.progressBar setMaxValue:100.0];
+    [self.progressBar setDoubleValue:0.0];
+    [[self.window contentView] addSubview:self.progressBar];
+
     self.deviceNames = [[NSMutableArray alloc] init];
 }
 
-- (void)connectToDevice:(id)sender {
-    NSInteger row = [self.deviceTable selectedRow];
-    if (row >= 0) {
-        NSString* deviceName = [self.deviceNames objectAtIndex:row];
-        std::string name = [deviceName UTF8String];
-        selected_device_id = bt->get_device_id_from_name(name);
-        if (bt->connect(selected_device_id)) {
-            [self.statusLabel setStringValue:[NSString stringWithFormat:@"Connected to %@", deviceName]];
-            current_conversation_id = selected_device_id; // Simple conversation id
-        } else {
-            [self.statusLabel setStringValue:@"Failed to connect"];
-        }
-    }
-}
+ - (void)connectToDevice:(id)sender {
+     NSInteger row = [self.deviceTable selectedRow];
+     if (row >= 0) {
+         NSString* deviceName = [self.deviceNames objectAtIndex:row];
+         std::string name = [deviceName UTF8String];
+         selected_device_id = bt->get_device_id_from_name(name);
+         if (bt->connect(selected_device_id)) {
+             [self.statusLabel setStringValue:[NSString stringWithFormat:@"Connected to %@", deviceName]];
+             current_conversation_id = selected_device_id; // Simple conversation id
+             [self loadMessageHistory];
+         } else {
+             [self.statusLabel setStringValue:@"Failed to connect"];
+         }
+     }
+ }
+
+ - (void)loadMessageHistory {
+     if (current_conversation_id.empty()) return;
+
+     auto messages = db->get_messages(current_conversation_id);
+     [[self.chatView textStorage] setAttributedString:[[NSAttributedString alloc] initWithString:@""]];
+     for (const auto& msg : messages) {
+         std::string display = msg.sender_id + ": " + std::string(msg.content.begin(), msg.content.end()) + "\n";
+         NSAttributedString* attrStr = [[NSAttributedString alloc] initWithString:[NSString stringWithUTF8String:display.c_str()]];
+         [[self.chatView textStorage] appendAttributedString:attrStr];
+     }
+ }
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
     return [self.deviceNames count];
@@ -516,6 +599,7 @@ public:
         delete crypto;
         delete messaging;
         delete ft;
+        delete settings;
     }
 
     void run() {
