@@ -8,10 +8,11 @@ use std::collections::HashMap;
 use zeroize::Zeroize;
 
 pub struct CryptoManager {
-    ecdh_secret: [u8; 32],
-    aes_key: [u8; 32],
-    #[allow(dead_code)]
+    ecdh_private: Scalar,
+    ecdh_public: MontgomeryPoint,
     rsa_private: RsaPrivateKey,
+    rsa_public: RsaPublicKey,
+    session_keys: HashMap<String, [u8; 32]>,
 }
 
 impl CryptoManager {
