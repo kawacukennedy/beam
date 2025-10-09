@@ -43,7 +43,22 @@ public:
     void download_and_install(const std::string& url) {
         // Download and install
         std::cout << "Downloading update from " << url << std::endl;
-        // Platform-specific install
+        CURL* curl = curl_easy_init();
+        if (curl) {
+            std::ofstream file("update.zip", std::ios::binary);
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
+            CURLcode res = curl_easy_perform(curl);
+            curl_easy_cleanup(curl);
+            file.close();
+
+            if (res == CURLE_OK) {
+                // Extract and install
+                // Platform-specific: unzip, replace binary, etc.
+                std::cout << "Update downloaded, installing..." << std::endl;
+            }
+        }
     }
 
 private:

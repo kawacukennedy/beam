@@ -55,7 +55,14 @@ add_library(crypto src/cpp/crypto/crypto.cpp)
 add_dependencies(crypto rust_crypto)
 target_link_libraries(crypto ${CMAKE_SOURCE_DIR}/src/rust/crypto/target/release/libbluebeam_crypto.a)
 
-add_library(bluetooth src/cpp/bluetooth/bluetooth.cpp)
+# Platform-specific Bluetooth sources
+if(APPLE)
+    add_library(bluetooth src/cpp/bluetooth/bluetooth.mm)
+elseif(WIN32)
+    add_library(bluetooth src/cpp/bluetooth/bluetooth_win.cpp)
+elseif(UNIX AND NOT APPLE)
+    add_library(bluetooth src/cpp/bluetooth/bluetooth_linux.cpp)
+endif()
 add_dependencies(bluetooth rust_bluetooth)
 target_link_libraries(bluetooth ${CMAKE_SOURCE_DIR}/src/rust/bluetooth/target/release/libbluebeam_bluetooth.a)
 

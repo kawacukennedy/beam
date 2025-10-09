@@ -1,14 +1,18 @@
 #[cfg(target_os = "linux")]
-use bluer::{Adapter, Device};
+use bluer::{Adapter, Device, DiscoveryFilter, DiscoveryTransport};
 
 #[cfg(target_os = "macos")]
-use corebluetooth as cb;
+
 
 #[cfg(target_os = "windows")]
 use winrt::windows::devices::bluetooth as bt;
 
 pub struct BluetoothManager {
     devices: Vec<DeviceInfo>,
+    #[cfg(target_os = "linux")]
+    session: Option<bluer::Session>,
+    #[cfg(target_os = "linux")]
+    adapter: Option<bluer::Adapter>,
 }
 
 #[derive(Clone)]
@@ -23,33 +27,16 @@ impl BluetoothManager {
     pub fn new() -> Self {
         BluetoothManager {
             devices: Vec::new(),
+            #[cfg(target_os = "linux")]
+            session: None,
+            #[cfg(target_os = "linux")]
+            adapter: None,
         }
     }
 
     #[cfg(target_os = "linux")]
-    pub async fn scan_devices(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let session = bluer::Session::new().await?;
-        let adapter = session.default_adapter().await?;
-        adapter.set_powered(true).await?;
-
-        let device_events = adapter.discover_devices().await?;
-        tokio::pin!(device_events);
-
-        while let Some(evt) = device_events.next().await {
-            if let bluer::AdapterEvent::DeviceAdded(addr) = evt {
-                let device = adapter.device(addr)?;
-                let name = device.name().await?.unwrap_or_else(|| "Unknown".to_string());
-                let rssi = device.rssi().await?.unwrap_or(0);
-
-                self.devices.push(DeviceInfo {
-                    id: addr.to_string(),
-                    name,
-                    address: addr.to_string(),
-                    rssi,
-                });
-            }
-        }
-
+    pub fn scan_devices(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Placeholder for synchronous scan
         Ok(())
     }
 
@@ -78,6 +65,6 @@ pub extern "C" fn bluetooth_new() -> *mut BluetoothManager {
 #[no_mangle]
 pub extern "C" fn bluetooth_free(ptr: *mut BluetoothManager) {
     if !ptr.is_null() {
-        unsafe { Box::from_raw(ptr); }
+        unsafe { let _ = Box::from_raw(ptr); }
     }
 }

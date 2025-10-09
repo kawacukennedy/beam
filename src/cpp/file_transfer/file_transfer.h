@@ -7,6 +7,8 @@
 #include <mutex>
 #include <condition_variable>
 
+class Crypto;
+
 #pragma pack(push, 1)
 struct OBEXHeader {
     uint8_t opcode; // OBEX opcodes: 0x80 Connect, 0x02 Put, 0x03 Get, 0x81 Disconnect, etc.
@@ -69,27 +71,31 @@ struct TransferSession {
 
 class FileTransfer {
 public:
-    FileTransfer();
+    FileTransfer(Crypto& crypto);
     ~FileTransfer();
 
     using ProgressCallback = std::function<void(uint64_t sent, uint64_t total)>;
     using CompletionCallback = std::function<void(bool success, const std::string& error)>;
+    using IncomingFileCallback = std::function<void(const std::string& filename, uint64_t size, std::function<void(bool accept, const std::string& save_path)> response)>;
 
     bool send_file(const std::string& path, const std::string& receiver_id,
-                   ProgressCallback progress_cb = nullptr,
-                   CompletionCallback completion_cb = nullptr);
+                    ProgressCallback progress_cb = nullptr,
+                    CompletionCallback completion_cb = nullptr);
 
     bool receive_file(const std::string& file_id, const std::string& filename, uint64_t size,
-                       const std::string& checksum, const std::string& save_path,
-                       ProgressCallback progress_cb = nullptr,
-                       CompletionCallback completion_cb = nullptr);
+                        const std::string& checksum, const std::string& save_path,
+                        ProgressCallback progress_cb = nullptr,
+                        CompletionCallback completion_cb = nullptr);
+
+    void set_incoming_file_callback(IncomingFileCallback callback);
 
     void set_data_sender(std::function<bool(const std::string& device_id, const std::vector<uint8_t>& data)> sender);
     void receive_packet(const std::string& sender_id, const std::vector<uint8_t>& data);
 
     // OBEX protocol methods
     std::vector<uint8_t> create_connect_packet();
-    std::vector<uint8_t> create_put_packet(const std::string& filename, uint64_t file_size, const std::vector<uint8_t>& data, bool is_final);
+    std::vector<uint8_t> create_put_packet(const std::string& filename, uint64_t file_size, const std::vector<uint8_t>& data, bool is_final, const std::string& session_id);
+    std::vector<uint8_t> create_chunk_packet(const FileChunk& chunk, bool is_final, const std::string& session_id);
     std::vector<uint8_t> create_disconnect_packet();
     std::vector<uint8_t> create_abort_packet();
 

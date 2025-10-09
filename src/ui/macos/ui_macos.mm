@@ -4,11 +4,11 @@
 #include <vector>
 #include <string>
 #include <functional>
-#include "../database/database.h"
-#include "../bluetooth/bluetooth.h"
-#include "../crypto/crypto.h"
-#include "../messaging/messaging.h"
-#include "../file_transfer/file_transfer.h"
+#include "database/database.h"
+#include "bluetooth/bluetooth.h"
+#include "crypto/crypto.h"
+#include "messaging/messaging.h"
+#include "file_transfer/file_transfer.h"
 
 static Database* db = nullptr;
 static Bluetooth* bt = nullptr;
@@ -20,7 +20,11 @@ static std::string selected_device_id;
 static std::string current_conversation_id;
 static bool first_run = true;
 
-@interface BlueBeamAppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource>
+std::string generate_id() {
+    return "id_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+}
+
+@interface BlueBeamAppDelegate : NSObject <NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate>
 @property (strong) NSWindow* window;
 @property (strong) NSTextField* statusLabel;
 @property (strong) NSButton* scanButton;
@@ -30,6 +34,7 @@ static bool first_run = true;
 @property (strong) NSTextField* messageField;
 @property (strong) NSProgressIndicator* progressBar;
 @property (strong) NSWindow* progressWindow;
+@property (strong) NSWindow* splashWindow;
 @end
 
 @implementation BlueBeamAppDelegate
@@ -40,14 +45,14 @@ static bool first_run = true;
     bt = new Bluetooth();
     crypto = new Crypto();
     messaging = new Messaging(*crypto);
-    ft = new FileTransfer();
+    ft = new FileTransfer(*crypto);
 
     // Set up callbacks
     bt->set_receive_callback([self](const std::string& device_id, const std::vector<uint8_t>& data) {
         messaging->receive_data(device_id, data);
         ft->receive_packet(device_id, data);
     });
-    messaging->set_bluetooth_sender([bt](const std::string& device_id, const std::vector<uint8_t>& data) {
+    messaging->set_bluetooth_sender([](const std::string& device_id, const std::vector<uint8_t>& data) {
         return bt->send_data(device_id, data);
     });
     messaging->set_message_callback([self](const std::string& id, const std::string& conversation_id,
@@ -55,8 +60,29 @@ static bool first_run = true;
                                            const std::vector<uint8_t>& content, MessageStatus status) {
         [self onMessageReceived:[NSString stringWithUTF8String:id.c_str()] conversation:[NSString stringWithUTF8String:conversation_id.c_str()] sender:[NSString stringWithUTF8String:sender_id.c_str()] receiver:[NSString stringWithUTF8String:receiver_id.c_str()] content:[NSData dataWithBytes:content.data() length:content.size()] status:status];
     });
-    ft->set_data_sender([bt](const std::string& device_id, const std::vector<uint8_t>& data) {
+    ft->set_data_sender([](const std::string& device_id, const std::vector<uint8_t>& data) {
         return bt->send_data(device_id, data);
+    });
+    ft->set_incoming_file_callback([self](const std::string& filename, uint64_t size, auto response) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSAlert* alert = [[NSAlert alloc] init];
+            [alert setMessageText:@"Incoming file"];
+            [alert setInformativeText:[NSString stringWithFormat:@"Receive file %s (%llu bytes)?", filename.c_str(), size]];
+            [alert addButtonWithTitle:@"Accept"];
+            [alert addButtonWithTitle:@"Reject"];
+            if ([alert runModal] == NSAlertFirstButtonReturn) {
+                NSSavePanel* panel = [NSSavePanel savePanel];
+                [panel setNameFieldStringValue:[NSString stringWithUTF8String:filename.c_str()]];
+                if ([panel runModal] == NSModalResponseOK) {
+                    std::string save_path = [[[panel URL] path] UTF8String];
+                    response(true, save_path);
+                } else {
+                    response(false, "");
+                }
+            } else {
+                response(false, "");
+            }
+        });
     });
 
     // First time use flow
@@ -65,8 +91,14 @@ static bool first_run = true;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
             [self requestBluetoothPermissions];
         });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2000 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            [self showOnboarding];
+            [self.splashWindow close];
+            [self createMainUI];
+            first_run = false;
+        });
     } else {
-        [self createMainWindow];
+        [self createMainUI];
     }
 }
 
@@ -269,11 +301,14 @@ static bool first_run = true;
 - (void)scanDevices:(id)sender {
     [self.statusLabel setStringValue:@"Scanning for Bluetooth devices..."];
     bt->scan();
-    // Simulate scan complete
+    // Wait for scan
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2000 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
         [self.statusLabel setStringValue:@"Scan complete"];
-        // Add fake devices to table
-        [self.deviceNames addObject:@"Fake Device 1"];
+        auto devices = bt->get_discovered_devices();
+        [self.deviceNames removeAllObjects];
+        for (const auto& dev : devices) {
+            [self.deviceNames addObject:[NSString stringWithUTF8String:dev.c_str()]];
+        }
         [self.deviceTable reloadData];
     });
 }
@@ -359,8 +394,83 @@ static bool first_run = true;
                                       [errAlert runModal];
                                   }
                               });
-            }
-        }
+    }
+}
+
+- (void)sendMessage:(id)sender {
+    NSString* text = [self.messageField stringValue];
+    if ([text length] == 0 || selected_device_id.empty()) return;
+    std::string msg = [text UTF8String];
+    std::vector<uint8_t> content(msg.begin(), msg.end());
+    std::string id = generate_id();
+    messaging->send_message(id, current_conversation_id, "self", selected_device_id, content, MessageStatus::SENT);
+    [self.messageField setStringValue:@""];
+    // Append to chat
+    NSAttributedString* attrStr = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"Me: %@\n", text]];
+    [[self.chatView textStorage] appendAttributedString:attrStr];
+}
+
+- (void)sendFile:(id)sender {
+    if (selected_device_id.empty()) return;
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    [panel setCanChooseFiles:YES];
+    [panel setCanChooseDirectories:NO];
+    [panel setAllowsMultipleSelection:NO];
+    if ([panel runModal] == NSModalResponseOK) {
+        NSURL* url = [[panel URLs] objectAtIndex:0];
+        std::string path = [[url path] UTF8String];
+        ft->send_file(path, selected_device_id,
+                      [self](uint64_t sent, uint64_t total) {
+                          // Update progress
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                              [self.statusLabel setStringValue:[NSString stringWithFormat:@"Sending file: %llu/%llu", sent, total]];
+                          });
+                      },
+                      [self](bool success, const std::string& error) {
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                              if (success) {
+                                  [self.statusLabel setStringValue:@"File sent successfully"];
+                              } else {
+                                  [self.statusLabel setStringValue:[NSString stringWithFormat:@"File send failed: %s", error.c_str()]];
+                              }
+                          });
+                      });
+    }
+}
+
+- (void)showSplashScreen {
+    NSWindow* splash = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 300) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    [splash center];
+    NSTextField* label = [[NSTextField alloc] initWithFrame:NSMakeRect(150, 130, 100, 40)];
+    [label setStringValue:@"BlueBeam"];
+    [label setEditable:NO];
+    [label setFont:[NSFont systemFontOfSize:24]];
+    [[splash contentView] addSubview:label];
+    [splash makeKeyAndOrderFront:nil];
+    self.splashWindow = splash;
+}
+
+- (void)requestBluetoothPermissions {
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Bluetooth Permissions"];
+    [alert setInformativeText:@"BlueBeam needs Bluetooth access to communicate with devices."];
+    [alert runModal];
+}
+
+- (void)showOnboarding {
+    NSWindow* onboarding = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 500, 400) styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+    [onboarding center];
+    [onboarding setTitle:@"Welcome to BlueBeam"];
+    NSTextField* text = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 20, 460, 360)];
+    [text setStringValue:@"Welcome to BlueBeam!\n\n1. Scan for devices.\n2. Connect to a device.\n3. Start messaging or sending files.\n\nEnjoy secure Bluetooth communication."];
+    [text setEditable:NO];
+    [[onboarding contentView] addSubview:text];
+    [onboarding makeKeyAndOrderFront:nil];
+    // Close after 5 seconds
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [onboarding close];
+    });
+}
     }];
 }
 
@@ -383,18 +493,98 @@ static bool first_run = true;
     if (device_id == selected_device_id) {
         // Show reconnect banner
         NSAlert* alert = [[NSAlert alloc] init];
-        [alert setMessageText:@"Device Disconnected"];
-        [alert setInformativeText:@"Attempting to reconnect..."];
+        [alert setMessageText:@"Device disconnected"];
+        [alert setInformativeText:@"The Bluetooth device has disconnected."];
         [alert runModal];
-        // Retry connect
-        for (int i = 0; i < 3; ++i) {
-            if (bt->connect(device_id)) {
-                break;
-            }
+    }
+}
+
+- (void)createMainUI {
+    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 800, 600) styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
+    [self.window center];
+    [self.window setTitle:@"BlueBeam"];
+    [self.window makeKeyAndOrderFront:nil];
+
+    // Create device list
+    self.deviceTable = [[NSTableView alloc] initWithFrame:NSMakeRect(0, 0, 200, 400)];
+    NSTableColumn* column = [[NSTableColumn alloc] initWithIdentifier:@"Device"];
+    [column setWidth:200];
+    [self.deviceTable addTableColumn:column];
+    [self.deviceTable setDataSource:self];
+    [self.deviceTable setDelegate:self];
+    NSScrollView* scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(10, 10, 200, 400)];
+    [scrollView setDocumentView:self.deviceTable];
+    [[self.window contentView] addSubview:scrollView];
+
+    // Create scan button
+    self.scanButton = [[NSButton alloc] initWithFrame:NSMakeRect(10, 420, 100, 30)];
+    [self.scanButton setTitle:@"Scan"];
+    [self.scanButton setTarget:self];
+    [self.scanButton setAction:@selector(scanDevices:)];
+    [[self.window contentView] addSubview:self.scanButton];
+
+    // Create connect button
+    NSButton* connectButton = [[NSButton alloc] initWithFrame:NSMakeRect(120, 420, 90, 30)];
+    [connectButton setTitle:@"Connect"];
+    [connectButton setTarget:self];
+    [connectButton setAction:@selector(connectToDevice:)];
+    [[self.window contentView] addSubview:connectButton];
+
+    // Create chat view
+    self.chatView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, 570, 400)];
+    [self.chatView setEditable:NO];
+    NSScrollView* chatScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(220, 10, 570, 400)];
+    [chatScroll setDocumentView:self.chatView];
+    [[self.window contentView] addSubview:chatScroll];
+
+    // Create message field
+    self.messageField = [[NSTextField alloc] initWithFrame:NSMakeRect(220, 420, 470, 30)];
+    [[self.window contentView] addSubview:self.messageField];
+
+    // Create send button
+    NSButton* sendButton = [[NSButton alloc] initWithFrame:NSMakeRect(650, 420, 70, 30)];
+    [sendButton setTitle:@"Send"];
+    [sendButton setTarget:self];
+    [sendButton setAction:@selector(sendMessage:)];
+    [[self.window contentView] addSubview:sendButton];
+
+    // Create send file button
+    NSButton* sendFileButton = [[NSButton alloc] initWithFrame:NSMakeRect(730, 420, 60, 30)];
+    [sendFileButton setTitle:@"File"];
+    [sendFileButton setTarget:self];
+    [sendFileButton setAction:@selector(sendFile:)];
+    [[self.window contentView] addSubview:sendFileButton];
+
+    // Create status label
+    self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 460, 780, 20)];
+    [self.statusLabel setEditable:NO];
+    [self.statusLabel setStringValue:@"Ready"];
+    [[self.window contentView] addSubview:self.statusLabel];
+
+    self.deviceNames = [[NSMutableArray alloc] init];
+}
+
+- (void)connectToDevice:(id)sender {
+    NSInteger row = [self.deviceTable selectedRow];
+    if (row >= 0) {
+        NSString* deviceName = [self.deviceNames objectAtIndex:row];
+        selected_device_id = [deviceName UTF8String];
+        if (bt->connect(selected_device_id)) {
+            [self.statusLabel setStringValue:[NSString stringWithFormat:@"Connected to %@", deviceName]];
+            current_conversation_id = selected_device_id; // Simple conversation id
+        } else {
+            [self.statusLabel setStringValue:@"Failed to connect"];
+        }
+    }
+}
             sleep(1);
         }
         // If failed, mark offline
     }
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
+    return [self.deviceNames count];
 }
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {

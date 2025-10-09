@@ -8,11 +8,10 @@ use std::collections::HashMap;
 use zeroize::Zeroize;
 
 pub struct CryptoManager {
-    ecdh_private: Scalar,
-    ecdh_public: MontgomeryPoint,
+    ecdh_secret: [u8; 32],
+    aes_key: [u8; 32],
+    #[allow(dead_code)]
     rsa_private: RsaPrivateKey,
-    rsa_public: RsaPublicKey,
-    session_keys: HashMap<String, [u8; 32]>,
 }
 
 impl CryptoManager {
@@ -113,7 +112,7 @@ pub extern "C" fn crypto_new() -> *mut CryptoManager {
 #[no_mangle]
 pub extern "C" fn crypto_free(ptr: *mut CryptoManager) {
     if !ptr.is_null() {
-        unsafe { Box::from_raw(ptr); }
+        unsafe { let _ = Box::from_raw(ptr); }
     }
 }
 

@@ -14,6 +14,8 @@ public:
     bool connect(const std::string& device_id);
     bool send_data(const std::string& device_id, const std::vector<uint8_t>& data);
     void set_receive_callback(std::function<void(const std::string& device_id, const std::vector<uint8_t>& data)> callback);
+    std::vector<std::string> get_discovered_devices();
+    void receive_data(const std::string& device_id, const std::vector<uint8_t>& data);
 
 private:
     class Impl;

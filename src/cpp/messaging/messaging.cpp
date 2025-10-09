@@ -1,6 +1,8 @@
 #include "messaging.h"
+#include "crypto/crypto.h"
 #include <cstring>
 #include <chrono>
+#include <iostream>
 
 class Messaging::Impl {
 public:
@@ -19,7 +21,7 @@ public:
     std::mutex ack_mutex;
     Crypto& crypto;
 
-    Impl(Crypto& c) : retry_thread(&Impl::retry_worker, this), crypto(c) {
+    Impl(Crypto& c) : crypto(c), retry_thread(&Impl::retry_worker, this) {
         // Initialize CRC32 table
         for (uint32_t i = 0; i < 256; ++i) {
             uint32_t crc = i;
@@ -102,29 +104,6 @@ public:
 
             lock.unlock();
             std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Yield CPU
-        }
-    }
-                        }
-                    }
-                } else {
-                    if (message_callback) {
-                        message_callback(msg.id, "", "", msg.receiver_id, {}, MessageStatus::SENT);
-                    }
-                }
-                lock.lock();
-            }
-
-            // Check ack timeouts
-            for (auto it = ack_waiting.begin(); it != ack_waiting.end(); ) {
-                if (it->second.next_retry <= now) {
-                    pending_messages.push(it->second);
-                    it = ack_waiting.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-
-            lock.unlock();
         }
     }
 };
@@ -231,9 +210,7 @@ bool Messaging::unpack_message(const std::vector<uint8_t>& data, std::string& id
     return true;
 }
 
-uint32_t Messaging::crc32(const uint8_t* data, size_t length) {
-    return pimpl->crc32(data, length);
-}
+
 
 bool Messaging::send_message(const std::string& id, const std::string& conversation_id,
                              const std::string& sender_id, const std::string& receiver_id,

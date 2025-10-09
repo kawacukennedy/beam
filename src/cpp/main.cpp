@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
     Crypto crypto;
     Bluetooth bluetooth;
     Messaging messaging(crypto);
-    FileTransfer file_transfer;
+    FileTransfer file_transfer(crypto);
     Settings settings;
     AutoUpdate auto_update;
     UI ui;
