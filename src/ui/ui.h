@@ -1,15 +1,9 @@
 #pragma once
 
-#include <memory>
-
-class UI {
-public:
-    UI();
-    ~UI();
-
-    void run();
-
-private:
-    class Impl;
-    std::unique_ptr<Impl> pimpl;
-};
+#ifdef __APPLE__
+#include "ui/macos/ui_macos.h"
+#elif defined(_WIN32)
+#include "ui/windows/ui_windows.h"
+#elif defined(__linux__)
+#include "ui/linux/ui_linux.h"
+#endif

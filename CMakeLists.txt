@@ -31,7 +31,6 @@ ExternalProject_Add(
     BUILD_COMMAND cargo build --release
     INSTALL_COMMAND ""
     BUILD_IN_SOURCE 1
-    BUILD_ALWAYS ON
 )
 ExternalProject_Add(
     rust_bluetooth
@@ -40,7 +39,6 @@ ExternalProject_Add(
     BUILD_COMMAND cargo build --release
     INSTALL_COMMAND ""
     BUILD_IN_SOURCE 1
-    BUILD_ALWAYS ON
 )
 
 # SQLite amalgamation
@@ -81,8 +79,10 @@ target_link_libraries(file_transfer bluetooth crypto)
 if(APPLE)
     find_library(COCOA Cocoa REQUIRED)
     find_library(COREBLUETOOTH CoreBluetooth REQUIRED)
+    find_library(SECURITY Security REQUIRED)
+    find_package(OpenSSL REQUIRED)
     add_executable(BlueBeam src/cpp/main.cpp src/ui/macos/ui_macos.mm)
-    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} database crypto bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database crypto bluetooth messaging file_transfer settings auto_update)
 elseif(WIN32)
     add_executable(BlueBeam src/cpp/main.cpp src/ui/windows/ui_windows.cpp)
     target_link_libraries(BlueBeam database crypto bluetooth messaging file_transfer)

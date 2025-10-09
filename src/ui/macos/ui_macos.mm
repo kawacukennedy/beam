@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
-#include "ui/ui.h"
+#include "ui_macos.h"
+#import <Cocoa/Cocoa.h>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -102,37 +103,9 @@ std::string generate_id() {
     }
 }
 
-- (void)showSplashScreen {
-    NSWindow* splash = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 300)
-                                                   styleMask:NSWindowStyleMaskBorderless
-                                                     backing:NSBackingStoreBuffered
-                                                       defer:NO];
-    [splash center];
-    NSTextField* label = [[NSTextField alloc] initWithFrame:NSMakeRect(150, 130, 100, 40)];
-    [label setStringValue:@"BlueBeam"];
-    [label setEditable:NO];
-    [label setBordered:NO];
-    [label setBackgroundColor:[NSColor clearColor]];
-    [splash.contentView addSubview:label];
-    [splash makeKeyAndOrderFront:nil];
-    // Disable animation for low power
-    [splash performSelector:@selector(close) withObject:nil afterDelay:0.3];
-}
 
-- (void)requestBluetoothPermissions {
-    // Request Bluetooth permissions
-    // For macOS, this is automatic, but show dialog
-    NSAlert* alert = [[NSAlert alloc] init];
-    [alert setMessageText:@"Bluetooth Access Required"];
-    [alert setInformativeText:@"BlueBeam needs Bluetooth access to communicate with nearby devices."];
-    [alert addButtonWithTitle:@"Allow"];
-    [alert addButtonWithTitle:@"Deny"];
-    if ([alert runModal] == NSAlertFirstButtonReturn) {
-        [self showProfileSetup];
-    } else {
-        [NSApp terminate:nil];
-    }
-}
+
+
 
 - (void)showProfileSetup {
     NSWindow* profileWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 400, 300)
@@ -333,69 +306,9 @@ std::string generate_id() {
     // TODO: Implement settings view
 }
 
-- (void)sendMessage:(id)sender {
-    NSString* text = [self.messageField stringValue];
-    if ([text length] > 0) {
-        // Encrypt and send
-        std::string msg = [text UTF8String];
-        std::vector<uint8_t> content(msg.begin(), msg.end());
-        messaging->send_message("msg_id", current_conversation_id, "sender", selected_device_id, content, MessageStatus::SENT);
 
-        // Add to chat as sent bubble
-        NSAttributedString* attrStr = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"You: %@\n", text]];
-        [[self.chatView textStorage] appendAttributedString:attrStr];
-        [self.messageField setStringValue:@""];
 
-        // Wait for ACK and update status
-        // TODO: Handle ACK callback to update status
-    }
-}
 
-- (void)sendFile:(id)sender {
-    NSOpenPanel* panel = [NSOpenPanel openPanel];
-    [panel beginWithCompletionHandler:^(NSInteger result) {
-        if (result == NSModalResponseOK) {
-            NSURL* url = [[panel URLs] objectAtIndex:0];
-            std::string path = [[url path] UTF8String];
-
-            // Show preview modal
-            NSAlert* preview = [[NSAlert alloc] init];
-            [preview setMessageText:@"Send File"];
-            [preview setInformativeText:[NSString stringWithFormat:@"Send %@?", [url lastPathComponent]]];
-            [preview addButtonWithTitle:@"Send"];
-            [preview addButtonWithTitle:@"Cancel"];
-            if ([preview runModal] == NSAlertFirstButtonReturn) {
-                // Show progress modal
-                NSWindow* progressWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 300, 100)
-                                                                       styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
-                                                                         backing:NSBackingStoreBuffered
-                                                                           defer:NO];
-                [progressWindow setTitle:@"Sending File"];
-                [progressWindow center];
-                NSProgressIndicator* progressBar = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(20, 20, 260, 20)];
-                [progressBar setStyle:NSProgressIndicatorStyleBar];
-                [progressWindow.contentView addSubview:progressBar];
-                [progressWindow makeKeyAndOrderFront:nil];
-
-                ft->send_file(path, selected_device_id,
-                              [progressBar](uint64_t sent, uint64_t total) {
-                                  [progressBar setDoubleValue:(double)sent / total * 100];
-                              },
-                              [progressWindow](bool success, const std::string& error) {
-                                  [progressWindow close];
-                                  if (success) {
-                                      NSAlert* toast = [[NSAlert alloc] init];
-                                      [toast setMessageText:@"File sent successfully!"];
-                                      [toast runModal];
-                                  } else {
-                                      NSAlert* errAlert = [[NSAlert alloc] init];
-                                      [errAlert setMessageText:@"File transfer failed"];
-                                      [errAlert setInformativeText:[NSString stringWithUTF8String:error.c_str()]];
-                                      [errAlert runModal];
-                                  }
-                              });
-    }
-}
 
 - (void)sendMessage:(id)sender {
     NSString* text = [self.messageField stringValue];
@@ -470,8 +383,6 @@ std::string generate_id() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [onboarding close];
     });
-}
-    }];
 }
 
 - (void)onMessageReceived:(NSString*)messageId conversation:(NSString*)conversation_id
@@ -568,7 +479,8 @@ std::string generate_id() {
     NSInteger row = [self.deviceTable selectedRow];
     if (row >= 0) {
         NSString* deviceName = [self.deviceNames objectAtIndex:row];
-        selected_device_id = [deviceName UTF8String];
+        std::string name = [deviceName UTF8String];
+        selected_device_id = bt->get_device_id_from_name(name);
         if (bt->connect(selected_device_id)) {
             [self.statusLabel setStringValue:[NSString stringWithFormat:@"Connected to %@", deviceName]];
             current_conversation_id = selected_device_id; // Simple conversation id
@@ -576,15 +488,6 @@ std::string generate_id() {
             [self.statusLabel setStringValue:@"Failed to connect"];
         }
     }
-}
-            sleep(1);
-        }
-        // If failed, mark offline
-    }
-}
-
-- (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {
-    return [self.deviceNames count];
 }
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)tableView {

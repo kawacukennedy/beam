@@ -1,5 +1,7 @@
 #[cfg(target_os = "linux")]
 use bluer::{Adapter, Device, DiscoveryFilter, DiscoveryTransport};
+#[cfg(target_os = "linux")]
+use futures::stream::StreamExt;
 
 #[cfg(target_os = "macos")]
 
@@ -36,19 +38,50 @@ impl BluetoothManager {
 
     #[cfg(target_os = "linux")]
     pub fn scan_devices(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder for synchronous scan
-        Ok(())
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            let session = bluer::Session::new().await?;
+            let adapter = session.default_adapter().await?;
+            adapter.set_powered(true).await?;
+            let mut filter = DiscoveryFilter::default();
+            filter.transport = DiscoveryTransport::Le;
+            adapter.set_discovery_filter(filter).await?;
+            let discover = adapter.discover_devices().await?;
+            tokio::pin!(discover);
+            while let Some(evt) = discover.next().await {
+                match evt {
+                    AdapterEvent::DeviceAdded(addr) => {
+                        if let Ok(device) = adapter.device(addr) {
+                            if let Ok(name) = device.name().await {
+                                let name = name.unwrap_or_else(|| addr.to_string());
+                                let rssi = device.rssi().await.unwrap_or(0);
+                                self.devices.push(DeviceInfo {
+                                    id: addr.to_string(),
+                                    name,
+                                    address: addr.to_string(),
+                                    rssi,
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(())
+        })
     }
 
     #[cfg(target_os = "macos")]
     pub fn scan_devices(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder for macOS CoreBluetooth
+        // macOS CoreBluetooth scanning
+        // This would require async runtime and CoreBluetooth bindings
         Ok(())
     }
 
     #[cfg(target_os = "windows")]
     pub fn scan_devices(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder for Windows Bluetooth
+        // Windows Bluetooth scanning - placeholder for winrt implementation
+        // Requires winrt bindings for Windows.Devices.Bluetooth
         Ok(())
     }
 

@@ -507,33 +507,6 @@ void FileTransfer::receive_packet(const std::string& sender_id, const std::vecto
                 pimpl->current_file_id.clear();
             }
         }
-    }
-            } else if (hi == static_cast<uint8_t>(OBEXHeaderId::BODY) || hi == static_cast<uint8_t>(OBEXHeaderId::END_OF_BODY)) {
-                // Decrypt body
-                body = pimpl->crypto.decrypt_message(sender_id, value);
-                last_hi = hi;
-            }
-        }
-
-        if (!filename.empty() && file_size > 0) {
-            std::string save_path = "/tmp/" + filename; // TODO: configurable
-            std::lock_guard<std::mutex> lock(pimpl->receive_mutex);
-            std::string file_id = "recv_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
-            pimpl->receiving_files[file_id].open(save_path, std::ios::binary);
-            pimpl->received_bytes[file_id] = 0;
-            pimpl->receiving_paths[file_id] = save_path;
-
-            if (!body.empty()) {
-                pimpl->receiving_files[file_id].write(reinterpret_cast<const char*>(body.data()), body.size());
-                pimpl->received_bytes[file_id] += body.size();
-            }
-
-            // If END_OF_BODY, complete
-            if (last_hi == static_cast<uint8_t>(OBEXHeaderId::END_OF_BODY)) {
-                pimpl->receiving_files[file_id].close();
-                // TODO: Verify checksum, update DB
-            }
-        }
     } else if (header.opcode == static_cast<uint8_t>(OBEXOpcode::DISCONNECT)) {
         // Handle disconnect
     }
