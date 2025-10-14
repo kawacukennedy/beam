@@ -1,5 +1,5 @@
 # BlueBeam
-
+ 
 **Offline. Private. Instant Hardware-Level Bluetooth Communication.**
 
 BlueBeam is a cross-platform offline peer-to-peer chat and file-sharing application for laptops. Written in C, C++, and Rust to allow direct hardware-level Bluetooth communication, ultra-low latency, high efficiency, and maximum security. Provides encrypted messaging and file transfer without internet dependency.
