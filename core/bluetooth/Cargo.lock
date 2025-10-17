@@ -65,6 +65,7 @@ version = "1.0.0"
 dependencies = [
  "bluer",
  "corebluetooth",
+ "futures",
  "tokio",
  "uuid",
  "winrt",

@@ -22,24 +22,7 @@ endif()
 # Find dependencies
 find_package(Threads REQUIRED)
 
-# Rust integration
-include(ExternalProject)
-ExternalProject_Add(
-    rust_crypto
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/core/crypto
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND cargo build --release
-    INSTALL_COMMAND ""
-    BUILD_IN_SOURCE 1
-)
-ExternalProject_Add(
-    rust_bluetooth
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/core/bluetooth
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND cargo build --release
-    INSTALL_COMMAND ""
-    BUILD_IN_SOURCE 1
-)
+# Rust integration disabled for now
 
 # SQLite amalgamation
 add_library(sqlite3 STATIC src/c/sqlite3.c)
@@ -50,8 +33,7 @@ add_library(database db/database.cpp)
 target_link_libraries(database sqlite3 Threads::Threads)
 
 add_library(crypto crypto/crypto.cpp)
-add_dependencies(crypto rust_crypto)
-target_link_libraries(crypto ${CMAKE_SOURCE_DIR}/core/crypto/target/release/libbluebeam_crypto.a)
+# Rust disabled
 
 # Platform-specific Bluetooth sources
 if(APPLE)
@@ -61,8 +43,7 @@ elseif(WIN32)
 elseif(UNIX AND NOT APPLE)
     add_library(bluetooth platforms/linux/bluetooth_linux.cpp)
 endif()
-add_dependencies(bluetooth rust_bluetooth)
-target_link_libraries(bluetooth ${CMAKE_SOURCE_DIR}/core/bluetooth/target/release/libbluebeam_bluetooth.a)
+# Rust disabled
 
 add_library(settings ui/settings.cpp)
 
