@@ -124,93 +124,72 @@ void Messaging::set_bluetooth_sender(std::function<bool(const std::string& devic
 }
 
 std::vector<uint8_t> Messaging::pack_message(const std::string& id, const std::string& conversation_id,
-                                              const std::string& sender_id, const std::string& receiver_id,
-                                              const std::vector<uint8_t>& content, uint8_t status) {
-    std::vector<uint8_t> buffer;
-
+                                           const std::string& sender_id, const std::string& receiver_id,
+                                           const std::vector<uint8_t>& content, uint64_t timestamp) {
     // Encrypt content
     auto encrypted_content = pimpl->crypto.encrypt_message(receiver_id, content);
 
-    // Calculate sizes
-    uint32_t id_len = id.size();
-    uint32_t conv_len = conversation_id.size();
-    uint32_t sender_len = sender_id.size();
-    uint32_t receiver_len = receiver_id.size();
-    uint32_t content_size = encrypted_content.size();
-    uint64_t timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-
-    // Create frame header
+    // Create frame
     MessageFrame frame;
-    frame.id_len = id_len;
-    frame.conversation_id_len = conv_len;
-    frame.sender_id_len = sender_len;
-    frame.receiver_id_len = receiver_len;
-    frame.timestamp = timestamp;
-    frame.content_size = content_size;
-    frame.status = status;
-
-    // Calculate CRC32 over the data part
-    std::vector<uint8_t> data_part;
-    data_part.insert(data_part.end(), reinterpret_cast<uint8_t*>(&frame.id_len), reinterpret_cast<uint8_t*>(&frame.id_len) + sizeof(frame) - sizeof(frame.crc32));
-    data_part.insert(data_part.end(), id.begin(), id.end());
-    data_part.insert(data_part.end(), conversation_id.begin(), conversation_id.end());
-    data_part.insert(data_part.end(), sender_id.begin(), sender_id.end());
-    data_part.insert(data_part.end(), receiver_id.begin(), receiver_id.end());
-    data_part.insert(data_part.end(), encrypted_content.begin(), encrypted_content.end());
-
-    frame.crc32 = pimpl->crc32(data_part.data(), data_part.size());
+    auto [id_high, id_low] = parse_id(id);
+    frame.id[0] = id_high;
+    frame.id[1] = id_low;
+    auto [conv_high, conv_low] = parse_id(conversation_id);
+    frame.conversation_id[0] = conv_high;
+    frame.conversation_id[1] = conv_low;
+    auto [send_high, send_low] = parse_id(sender_id);
+    frame.sender_id[0] = send_high;
+    frame.sender_id[1] = send_low;
+    auto [recv_high, recv_low] = parse_id(receiver_id);
+    frame.receiver_id[0] = recv_high;
+    frame.receiver_id[1] = recv_low;
+    frame.timestamp_unix_ms = timestamp;
+    frame.content_size = encrypted_content.size();
+    frame.length = sizeof(MessageFrame) + encrypted_content.size() + sizeof(uint32_t);
 
     // Pack into buffer
+    std::vector<uint8_t> buffer;
     buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&frame), reinterpret_cast<uint8_t*>(&frame) + sizeof(frame));
-    buffer.insert(buffer.end(), id.begin(), id.end());
-    buffer.insert(buffer.end(), conversation_id.begin(), conversation_id.end());
-    buffer.insert(buffer.end(), sender_id.begin(), sender_id.end());
-    buffer.insert(buffer.end(), receiver_id.begin(), receiver_id.end());
     buffer.insert(buffer.end(), encrypted_content.begin(), encrypted_content.end());
+
+    // Calculate CRC32 over buffer so far
+    uint32_t crc = pimpl->crc32(buffer.data(), buffer.size());
+    buffer.insert(buffer.end(), reinterpret_cast<uint8_t*>(&crc), reinterpret_cast<uint8_t*>(&crc) + sizeof(crc));
 
     return buffer;
 }
 
 bool Messaging::unpack_message(const std::vector<uint8_t>& data, std::string& id, std::string& conversation_id,
                                 std::string& sender_id, std::string& receiver_id,
-                                std::vector<uint8_t>& content, uint8_t& status, uint64_t& timestamp) {
-    if (data.size() < sizeof(MessageFrame)) return false;
+                                std::vector<uint8_t>& content, uint64_t& timestamp) {
+    if (data.size() < sizeof(MessageFrame) + sizeof(uint32_t)) return false;
 
     MessageFrame frame;
     std::memcpy(&frame, data.data(), sizeof(MessageFrame));
 
-    size_t offset = sizeof(MessageFrame);
+    if (frame.length != data.size()) return false;
 
-    if (offset + frame.id_len > data.size()) return false;
-    id.assign(data.begin() + offset, data.begin() + offset + frame.id_len);
-    offset += frame.id_len;
+    size_t content_start = sizeof(MessageFrame);
+    if (content_start + frame.content_size + sizeof(uint32_t) > data.size()) return false;
 
-    if (offset + frame.conversation_id_len > data.size()) return false;
-    conversation_id.assign(data.begin() + offset, data.begin() + offset + frame.conversation_id_len);
-    offset += frame.conversation_id_len;
-
-    if (offset + frame.sender_id_len > data.size()) return false;
-    sender_id.assign(data.begin() + offset, data.begin() + offset + frame.sender_id_len);
-    offset += frame.sender_id_len;
-
-    if (offset + frame.receiver_id_len > data.size()) return false;
-    receiver_id.assign(data.begin() + offset, data.begin() + offset + frame.receiver_id_len);
-    offset += frame.receiver_id_len;
-
-    if (offset + frame.content_size > data.size()) return false;
-    std::vector<uint8_t> encrypted_content(data.begin() + offset, data.begin() + offset + frame.content_size);
-
-    status = frame.status;
-    timestamp = frame.timestamp;
+    std::vector<uint8_t> encrypted_content(data.begin() + content_start, data.begin() + content_start + frame.content_size);
 
     // Verify CRC32
-    std::vector<uint8_t> data_part(data.begin() + sizeof(uint32_t), data.end());
+    std::vector<uint8_t> data_part(data.begin(), data.begin() + content_start + frame.content_size);
     uint32_t calculated_crc = pimpl->crc32(data_part.data(), data_part.size());
-    if (calculated_crc != frame.crc32) return false;
+    uint32_t received_crc;
+    std::memcpy(&received_crc, data.data() + data.size() - sizeof(uint32_t), sizeof(uint32_t));
+    if (calculated_crc != received_crc) return false;
 
     // Decrypt content
-    content = pimpl->crypto.decrypt_message(sender_id, encrypted_content);
+    content = pimpl->crypto.decrypt_message(id_to_string(frame.sender_id[0], frame.sender_id[1]), encrypted_content);
+
+    id = id_to_string(frame.id[0], frame.id[1]);
+    conversation_id = id_to_string(frame.conversation_id[0], frame.conversation_id[1]);
+    sender_id = id_to_string(frame.sender_id[0], frame.sender_id[1]);
+    receiver_id = id_to_string(frame.receiver_id[0], frame.receiver_id[1]);
+    timestamp = frame.timestamp_unix_ms;
+
     return true;
 }
 

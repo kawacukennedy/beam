@@ -71,10 +71,10 @@ public:
 
     std::vector<uint8_t> pack_message(const std::string& id, const std::string& conversation_id,
                                       const std::string& sender_id, const std::string& receiver_id,
-                                      const std::vector<uint8_t>& content, uint8_t status);
+                                      const std::vector<uint8_t>& content, uint64_t timestamp);
     bool unpack_message(const std::vector<uint8_t>& data, std::string& id, std::string& conversation_id,
                         std::string& sender_id, std::string& receiver_id,
-                        std::vector<uint8_t>& content, uint8_t& status, uint64_t& timestamp);
+                        std::vector<uint8_t>& content, uint64_t& timestamp);
 
     std::vector<uint8_t> pack_ack(const std::string& message_id);
     bool unpack_ack(const std::vector<uint8_t>& data, std::string& message_id);
