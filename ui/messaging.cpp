@@ -1,5 +1,5 @@
 #include "messaging.h"
-#include "crypto/crypto.h"
+#include "../crypto/crypto.h"
 #include <cstring>
 #include <chrono>
 #include <iostream>
