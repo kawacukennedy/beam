@@ -26,7 +26,7 @@ find_package(Threads REQUIRED)
 include(ExternalProject)
 ExternalProject_Add(
     rust_crypto
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/crypto
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/core/crypto
     CONFIGURE_COMMAND ""
     BUILD_COMMAND cargo build --release
     INSTALL_COMMAND ""
@@ -34,7 +34,7 @@ ExternalProject_Add(
 )
 ExternalProject_Add(
     rust_bluetooth
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/bluetooth
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/core/bluetooth
     CONFIGURE_COMMAND ""
     BUILD_COMMAND cargo build --release
     INSTALL_COMMAND ""
@@ -46,33 +46,33 @@ add_library(sqlite3 STATIC src/c/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC src/c)
 
 # Core libraries
-add_library(database src/cpp/database/database.cpp)
+add_library(database db/database.cpp)
 target_link_libraries(database sqlite3 Threads::Threads)
 
-add_library(crypto src/cpp/crypto/crypto.cpp)
+add_library(crypto crypto/crypto.cpp)
 add_dependencies(crypto rust_crypto)
-target_link_libraries(crypto ${CMAKE_SOURCE_DIR}/src/rust/crypto/target/release/libbluebeam_crypto.a)
+target_link_libraries(crypto ${CMAKE_SOURCE_DIR}/core/crypto/target/release/libbluebeam_crypto.a)
 
 # Platform-specific Bluetooth sources
 if(APPLE)
-    add_library(bluetooth src/cpp/bluetooth/bluetooth.mm)
+    add_library(bluetooth platforms/macos/bluetooth.mm)
 elseif(WIN32)
-    add_library(bluetooth src/cpp/bluetooth/bluetooth_win.cpp)
+    add_library(bluetooth platforms/windows/bluetooth_win.cpp)
 elseif(UNIX AND NOT APPLE)
-    add_library(bluetooth src/cpp/bluetooth/bluetooth_linux.cpp)
+    add_library(bluetooth platforms/linux/bluetooth_linux.cpp)
 endif()
 add_dependencies(bluetooth rust_bluetooth)
-target_link_libraries(bluetooth ${CMAKE_SOURCE_DIR}/src/rust/bluetooth/target/release/libbluebeam_bluetooth.a)
+target_link_libraries(bluetooth ${CMAKE_SOURCE_DIR}/core/bluetooth/target/release/libbluebeam_bluetooth.a)
 
-add_library(settings src/cpp/settings/settings.cpp)
+add_library(settings ui/settings.cpp)
 
-add_library(auto_update src/cpp/auto_update/auto_update.cpp)
+add_library(auto_update ui/auto_update.cpp)
 target_link_libraries(auto_update curl)
 
-add_library(messaging src/cpp/messaging/messaging.cpp)
+add_library(messaging ui/messaging.cpp)
 target_link_libraries(messaging bluetooth crypto)
 
-add_library(file_transfer src/cpp/file_transfer/file_transfer.cpp)
+add_library(file_transfer ui/file_transfer.cpp)
 target_link_libraries(file_transfer bluetooth crypto)
 
 # Platform-specific UI
@@ -81,23 +81,23 @@ if(APPLE)
     find_library(COREBLUETOOTH CoreBluetooth REQUIRED)
     find_library(SECURITY Security REQUIRED)
     find_package(OpenSSL REQUIRED)
-    add_executable(BlueBeam src/cpp/main.cpp src/ui/macos/ui_macos.mm)
+    add_executable(BlueBeam ui/main.cpp platforms/macos/ui_macos.mm platforms/macos/ui_macos.h)
     target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database crypto bluetooth messaging file_transfer settings auto_update)
 elseif(WIN32)
-    add_executable(BlueBeam src/cpp/main.cpp src/ui/windows/ui_windows.cpp)
+    add_executable(BlueBeam ui/main.cpp platforms/windows/ui_windows.cpp platforms/windows/ui_windows.h)
     target_link_libraries(BlueBeam database crypto bluetooth messaging file_transfer)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
-    add_executable(BlueBeam src/cpp/main.cpp src/ui/linux/ui_linux.cpp)
+    add_executable(BlueBeam ui/main.cpp ui/linux/ui_linux.cpp)
     target_include_directories(BlueBeam PRIVATE ${GTK4_INCLUDE_DIRS})
     target_link_libraries(BlueBeam ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
 endif()
 
 # Install
 install(TARGETS BlueBeam DESTINATION bin)
-install(DIRECTORY ../resources/ DESTINATION share/bluebeam FILES_MATCHING PATTERN "*")
-install(FILES ../README.md ../LICENSE DESTINATION share/doc/bluebeam)
+install(DIRECTORY resources/ DESTINATION share/bluebeam FILES_MATCHING PATTERN "*")
+install(FILES README.md LICENSE DESTINATION share/doc/bluebeam)
 
 # CPack for installers
 set(CPACK_PACKAGE_NAME "BlueBeam")

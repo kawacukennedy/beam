@@ -14,10 +14,14 @@
 #pragma pack(push, 1)
 struct MessageFrame {
     uint32_t length;
-    uint64_t id[2];
-    uint64_t conversation_id[2];
-    uint64_t sender_id[2];
-    uint64_t receiver_id[2];
+    uint64_t id_high;
+    uint64_t id_low;
+    uint64_t conversation_id_high;
+    uint64_t conversation_id_low;
+    uint64_t sender_id_high;
+    uint64_t sender_id_low;
+    uint64_t receiver_id_high;
+    uint64_t receiver_id_low;
     uint64_t timestamp_unix_ms;
     uint32_t content_size;
     // uint8_t content[content_size]; // variable
@@ -38,9 +42,9 @@ enum class MessageStatus {
 };
 
 struct PendingMessage {
-    uint64_t id[2];
+    std::string id;
     std::vector<uint8_t> data;
-    uint64_t receiver_id[2];
+    std::string receiver_id;
     int retry_count;
     std::chrono::steady_clock::time_point next_retry;
 };
@@ -52,28 +56,28 @@ public:
     Messaging(Crypto& crypto);
     ~Messaging();
 
-    using MessageCallback = std::function<void(const uint64_t id[2], const uint64_t conversation_id[2],
-                                               const uint64_t sender_id[2], const uint64_t receiver_id[2],
-                                               const std::vector<uint8_t>& content)>;
+    using MessageCallback = std::function<void(const std::string& id, const std::string& conversation_id,
+                                               const std::string& sender_id, const std::string& receiver_id,
+                                               const std::vector<uint8_t>& content, MessageStatus status)>;
 
     void set_message_callback(MessageCallback callback);
     void set_bluetooth_sender(std::function<bool(const std::string& device_id, const std::vector<uint8_t>& data)> sender);
 
-    bool send_message(const uint64_t id[2], const uint64_t conversation_id[2],
-                      const uint64_t sender_id[2], const uint64_t receiver_id[2],
-                      const std::vector<uint8_t>& content);
+    bool send_message(const std::string& id, const std::string& conversation_id,
+                      const std::string& sender_id, const std::string& receiver_id,
+                      const std::vector<uint8_t>& content, MessageStatus status);
 
     void receive_data(const std::string& sender_id, const std::vector<uint8_t>& data);
 
-    std::vector<uint8_t> pack_message(const uint64_t id[2], const uint64_t conversation_id[2],
-                                      const uint64_t sender_id[2], const uint64_t receiver_id[2],
-                                      const std::vector<uint8_t>& content, uint64_t timestamp_unix_ms);
-    bool unpack_message(const std::vector<uint8_t>& data, uint64_t id[2], uint64_t conversation_id[2],
-                        uint64_t sender_id[2], uint64_t receiver_id[2],
-                        std::vector<uint8_t>& content, uint64_t& timestamp_unix_ms);
+    std::vector<uint8_t> pack_message(const std::string& id, const std::string& conversation_id,
+                                      const std::string& sender_id, const std::string& receiver_id,
+                                      const std::vector<uint8_t>& content, uint8_t status);
+    bool unpack_message(const std::vector<uint8_t>& data, std::string& id, std::string& conversation_id,
+                        std::string& sender_id, std::string& receiver_id,
+                        std::vector<uint8_t>& content, uint8_t& status, uint64_t& timestamp);
 
-    std::vector<uint8_t> pack_ack(const uint64_t message_id[2]);
-    bool unpack_ack(const std::vector<uint8_t>& data, uint64_t message_id[2]);
+    std::vector<uint8_t> pack_ack(const std::string& message_id);
+    bool unpack_ack(const std::vector<uint8_t>& data, std::string& message_id);
 
 private:
     static constexpr uint32_t MAGIC = 0x4D41434B; // 'MACK'

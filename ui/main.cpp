@@ -6,7 +6,13 @@
 #include "file_transfer/file_transfer.h"
 #include "settings/settings.h"
 #include "auto_update/auto_update.h"
-#include "ui/ui.h"
+#ifdef __APPLE__
+#include "macos/ui_macos.h"
+#elif _WIN32
+#include "windows/ui_windows.h"
+#else
+#include "linux/ui_linux.h"
+#endif
 #include <thread>
 #include <chrono>
 
@@ -20,7 +26,13 @@ int main(int argc, char* argv[]) {
     FileTransfer file_transfer(crypto);
     Settings settings;
     AutoUpdate auto_update;
-    UI ui;
+#ifdef __APPLE__
+    UIMacos ui(&db, &messaging, &file_transfer, &bluetooth, &settings);
+#elif _WIN32
+    UIWindows ui(&db, &messaging, &file_transfer, &bluetooth, &settings);
+#else
+    UILinux ui(&db, &messaging, &file_transfer, &bluetooth, &settings);
+#endif
 
     // Integrate with bluetooth
     bluetooth.set_receive_callback([&messaging, &file_transfer](const std::string& device_id, const std::vector<uint8_t>& data) {
