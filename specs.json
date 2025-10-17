@@ -1,0 +1,501 @@
+{
+  "app": {
+    "name": "BlueBeam",
+    "version": "1.0.0",
+    "tagline": "Offline. Private. Instant Hardware-Level Bluetooth Communication.",
+    "summary": "BlueBeam is a cross-platform offline peer-to-peer chat and file-sharing desktop application for laptops. Written using low-level languages (C17, C++20, Rust 1.80) for direct hardware access, efficiency, and deterministic behavior. Supports macOS, Windows, Linux with native UI and hardware-level Bluetooth integration.",
+    "goals": [
+      "Secure end-to-end encrypted one-to-one messaging and file sharing over Bluetooth",
+      "Work fully offline without servers",
+      "Low-latency messages (<100ms typical) and high-throughput file transfers (>=5 MB/s where hardware allows)",
+      "Consistent UX across OSes while using native UI toolkits",
+      "Robust error handling, resumable transfers, and strict privacy"
+    ],
+    "non_goals": [
+      "Server-side features, cloud backups or telemetry by default (telemetry disabled unless explicitly opted-in)",
+      "Video conferencing in v1.0 (may be future extension)"
+    ]
+  },
+  "platforms": {
+    "macos": {
+      "min_version": "14 (Sonoma)",
+      "ui_toolkit": "Cocoa (Objective-C++ / C++/Rust bridging acceptable)",
+      "bluetooth_api": "CoreBluetooth for LE + IOBluetooth for classic where required; prefer CoreBluetooth + RFCOMM-like channels via native bridging",
+      "packaging": "Signed and notarized .dmg; auto-update via Sparkle-compatible signed updates",
+      "entitlements": ["com.apple.security.device.bluetooth", "com.apple.security.files.user-selected.read-write", "com.apple.security.network.client", "com.apple.security.network.server", "com.apple.security.application-groups"],
+      "compiler_flags": ["-O3", "-Wall", "-Wextra", "-march=native", "-fomit-frame-pointer"]
+    },
+    "windows": {
+      "min_version": "Windows 10 (1903+) recommended; support Win11",
+      "ui_toolkit": "Win32 API / WinRT with Direct2D for rendering (C++/Rust bindings)",
+      "bluetooth_api": "Windows.Devices.Bluetooth (UWP or WinRT) + Rfcomm for serial channels",
+      "packaging": "Signed MSI installer with EV Code Signing; auto-update via Squirrel/WinUpdate integration",
+      "manifest_permissions": ["bluetooth", "networking", "runFullTrust"],
+      "compiler_flags": ["/O2", "/W4", "/permissive-"]
+    },
+    "linux": {
+      "distributions": ["Ubuntu 22.04 LTS+", "Fedora 39+", "Arch (rolling)"],
+      "ui_toolkit": "GTK4 (C) or Qt6 (C++) with OpenGL acceleration option",
+      "bluetooth_api": "BlueZ via D-Bus (use libdbus or sd-bus) and low-level HCI sockets for advanced features",
+      "packaging": ["AppImage", "deb", "rpm"], 
+      "system_integration": ["systemd user service for background scanning and auto-start with permission"],
+      "compiler_flags": ["-O3", "-Wall", "-Wextra", "-march=native", "-fPIC"]
+    }
+  },
+  "technical_stack": {
+    "languages": ["C17", "C++20", "Rust 1.80"],
+    "recommended_structure": {
+      "core": "Rust for core protocols, memory safety, and crypto glue; C++ for UI/native SDK bindings; small C modules for platform-hardware hooks where necessary",
+      "module_boundary_rules": "All unsafe native platform calls isolated in single-file C/C++ modules; core protocol, security, and DB logic in Rust where possible",
+      "ffi": "Use C ABI for bridging; provide clear ownership and lifetime docs for every FFI boundary"
+    },
+    "third_party_libs_allowed": {
+      "crypto": ["libsodium or rust-crypto primitives (Curve25519,X25519), OpenSSL (if required)"],
+      "db": "SQLite (compiled with SQLCipher optional for DB encryption)",
+      "build": "CMake for C/C++; cargo for Rust; cross-compilation toolchain specified in CI"
+    }
+  },
+  "ui_specifications": {
+    "design_tokens": {
+      "colors": {
+        "primary": "#1E90FF",
+        "primary_variant": "#2563EB",
+        "accent": "#8B5CF6",
+        "bg_light": "#FFFFFF",
+        "bg_dark": "#0F172A",
+        "surface_light": "#F3F4F6",
+        "surface_dark": "#111827",
+        "text_primary_light": "#111827",
+        "text_primary_dark": "#F8FAFC",
+        "success": "#16A34A",
+        "error": "#DC2626",
+        "warning": "#F59E0B"
+      },
+      "typography": {
+        "font_family_system": {
+          "macos": "SF Pro, Inter fallback",
+          "windows": "Segoe UI",
+          "linux": "Inter / Ubuntu"
+        },
+        "sizes": {
+          "h1": 28,
+          "h2": 22,
+          "h3": 18,
+          "body": 16,
+          "caption": 12,
+          "monospace": 13
+        },
+        "line_heights": {
+          "h1": 34,
+          "body": 24
+        }
+      },
+      "spacing": {
+        "base": 8,
+        "gutter": 16,
+        "sidebar_width": 280,
+        "border_radius": 12,
+        "button_padding": [12, 18]
+      },
+      "motion": {
+        "fast": 120,
+        "medium": 240,
+        "slow": 360,
+        "easing": "cubic-bezier(0.4,0,0.2,1)"
+      }
+    },
+    "component_specs": {
+      "main_window": {
+        "min_width": 900,
+        "min_height": 600,
+        "layout": "two-column",
+        "left_column": {"width": 280, "contents": ["profile_card", "search_box", "tabs(chats, devices, transfers)"]},
+        "right_column": {"flex": 1, "contents": ["conversation_header", "message_list", "composer", "transfer_strip"]}
+      },
+      "profile_card": {
+        "avatar": {"size": 48, "shape": "circle"},
+        "name": {"font_size": 16, "weight": 600},
+        "device_nickname": {"font_size": 12, "color": "text_secondary"}
+      },
+      "tabs": {
+        "height": 48,
+        "tab": {"padding": [8, 16], "active_bg": "surface_light", "hover_bg": "surface_variant"}
+      },
+      "device_card": {
+        "size": {"w": 150, "h": 150},
+        "elements": ["avatar", "device_name", "signal_bar(4 steps)", "pair_button", "trust_badge"],
+        "signal_bar_spec": {"width": 30, "height": 6, "levels": 4}
+      },
+      "message_bubble": {
+        "max_width_pct": 66,
+        "sent": {"bg": "primary", "text_color": "#ffffff", "alignment": "right"},
+        "received": {"bg": "surface_light", "text_color": "#111827", "alignment": "left"},
+        "meta": {"timestamp_font": 11, "status_icon": 14}
+      },
+      "composer": {
+        "textarea": {"min_rows": 1, "max_rows": 6, "placeholder": "Type a message…"},
+        "controls": ["attach_button", "emoji_button", "send_button"],
+        "send_button": {"size": 44, "shape": "circle", "icon": "paper_plane"}
+      },
+      "file_transfer_card": {
+        "elements": ["icon", "filename", "size", "progress_bar", "percent", "speed", "action_buttons(pause/resume/cancel)"],
+        "progress_bar": {"height": 8, "smooth": true}
+      },
+      "dialogs": {
+        "pairing_modal": {
+          "size": {"w": 420, "h": 260},
+          "elements": ["large_pin(6-digit)", "fingerprint_hash_emoji_line", "confirm_button", "cancel_button"],
+          "focus_order": ["pin_field", "confirm_button", "cancel_button"]
+        },
+        "incoming_file_modal": {
+          "size": {"w": 520, "h": 240},
+          "elements": ["file_preview", "filename", "size", "accept_button", "decline_button", "trust_checkbox"],
+          "accept_default": false
+        }
+      }
+    },
+    "visual_accessibility": {
+      "contrast": {
+        "text_bg_contrast_ratio": ">=4.5:1 for body text",
+        "large_text_contrast_ratio": ">=3:1 for headings"
+      },
+      "focus": {
+        "outline_size": 3,
+        "outline_color": "#2563EB",
+        "keyboard_navigation": "All interactive elements must be reachable via Tab and have visible focus"
+      },
+      "screen_reader": {
+        "aria_roles": {
+          "device_card": "button, aria-label: 'Device {name}. Signal strength {n} of 4.'",
+          "pair_button": "button, aria-controls pairing modal",
+          "send_button": "button, aria-label 'Send message'"
+        }
+      }
+    },
+    "icons": {
+      "system": ["logo", "search", "settings", "send", "attach", "emoji", "pause", "resume", "cancel", "check", "error"],
+      "format": "SVG optimized + platform-res PNG fallbacks",
+      "size_px": [16, 24, 32, 44]
+    }
+  },
+  "ux_flows": {
+    "onboarding_first_time": {
+      "goal": "Get Bluetooth permissions, collect minimal profile, start discovery",
+      "steps": [
+        {"1": "User launches BlueBeam → show splash (300ms)"},
+        {"2": "Show welcome panel with 3 bullets and 'Get Started' CTA"},
+        {"3": "Request OS Bluetooth permission modal (native). If Denied -> show inline OS instructions and Retry button."},
+        {"4": "After permission, show Profile page: Name (required min 3 chars), optional avatar (PNG/JPEG ≤ 5MB), device nickname auto-filled from hostname but editable."},
+        {"5": "After saving, show short interactive tutorial overlay (3 steps) highlighting sidebar, discovery, chat composer."},
+        {"6": "Auto-start device discovery in 'Devices' tab."
+        }
+      ],
+      "success_state": "User sees nearby devices; tutorial can be dismissed and reopened via Help > Tutorial"
+    },
+    "device_discovery_and_pairing": {
+      "goal": "Discover nearby devices and pair securely",
+      "scenarios": {
+        "automatic_scan": {
+          "start": "Background scanning starts (scan_interval_ms as configured). Update UI every scan tick.",
+          "ui_feedback": "Spinner in Devices tab until first scan; each found device appears with signal level and last_seen timestamp."
+        },
+        "manual_refresh": {
+          "action": "User clicks refresh; trigger immediate scan; UI shows 1s pulse on refresh button.",
+          "rate_limit": "Manual refresh limited to once per 2s to avoid excessive HCI activity."
+        },
+        "pairing_happy_path": [
+          "User clicks Pair on device card → open pairing_modal",
+          "Pairing modal shows generated 6-digit PIN (server side or local pairing depending on stack) and checksum fingerprint (first 12 hex groups) shown as emoji hash as well",
+          "Both users confirm PIN on both devices",
+          "Perform ECDH key exchange (Curve25519) over temporary unencrypted channel; derive session key; exchange device public keys signed by persistent device key (RSA-4096) to prevent MITM",
+          "On success: mark device.trusted = true in DB, store device public key, close modal, show toast 'Paired with {device_name}'"
+        ],
+        "pairing_failures": {
+          "pin_mismatch": "Show 'PIN mismatch. Try again.' Allow 3 attempts then abort.",
+          "timeout": "If connection_timeout_ms elapses, show 'Pairing timed out' with Retry button and diagnostic link to logs.",
+          "remote_decline": "If other side declines, show 'Pairing declined by {device_name}'"
+        }
+      },
+      "security_notes": [
+        "Use ECDH (Curve25519) + ephemeral session keys for handshake",
+        "Verify device public key via user-confirmed PIN or fingerprint display",
+        "Do not store ephemeral session keys beyond session lifetime"
+      ]
+    },
+    "chat_flow": {
+      "goal": "Send and receive text messages 1:1 over secure channel",
+      "ui": "Conversation opens in right column with top bar showing device name, last_seen, and actions (Unpair, Block, Info). Message list scrolls newest to bottom.",
+      "detailed_steps": [
+        "User selects device (paired) from sidebar -> load last 200 messages from DB into view (lazy-load older messages on scroll).",
+        "Composer accepts multiline input: Enter to send, Shift+Enter newline. Send button accessible by mouse/keyboard.",
+        "On send: perform local optimistic render with status 'sending' (gray clock icon). Persist message to DB with status 'queued'.",
+        "Transport: Build message frame (see 'frame_spec'), encrypt with session AES-256-GCM, send over RFCOMM. Start ACK timer (default 2000ms).",
+        "On ACK: update message status to 'delivered' and persist. If peer sends read receipt, update status to 'read'.",
+        "If no ACK within 3 retries with exponential backoff (base 500ms -> 1000ms -> 2000ms), set status 'failed' and show 'Retry' control in message bubble."
+      ],
+      "edge_cases": {
+        "peer_offline": "Queue outgoing messages locally; attempt delivery when peer reconnects.",
+        "db_error": "If DB write fails, show inline error and store message in in-memory queue (volatile), notify user to 'Restart to persist'."
+      },
+      "accessibility": ["Composer has aria-label='Message input', send button aria-label='Send message'"]
+    },
+    "file_transfer_flow": {
+      "goal": "Send any file type, resumable and integrity-checked",
+      "preconditions": "Devices must be paired and have active RFCOMM/OBEX channel",
+      "steps": [
+        "User drags file(s) or clicks attach -> show preview modal with filename, size, MIME type, auto-generated thumbnail for images/PDFs.",
+        "User clicks 'Send' -> create transfer record in DB with status 'pending', compute SHA-256 on sender side streaming (do not load entire file into RAM).",
+        "Start transfer: open file handle -> read in chunk_size_bytes (default 131072) -> build transfer packet with metadata: transfer_id (UUID), chunk_index (u32), total_chunks (u32), chunk_size (u32), payload bytes; compute CRC32 per chunk and include; encrypt chunk with session key (AES-256-GCM) with unique IV derived from transfer_id + chunk_index.",
+        "Send each chunk and await ACK per chunk. ACK includes chunk_index and success code. On missing ACK after retry_policy.max_attempts, attempt to resume from last successful chunk after backoff. Provide visual progress updated per ACK.",
+        "If transfer interrupted: both sides persist transfer progress in DB; when reconnecting, UI shows 'Resume transfer' action which issues 'TRANSFER_RESUME' control frame. Sender and receiver reconcile last acknowledged chunk_index and continue.",
+        "On final chunk: receiver computes final SHA-256 while streaming chunks into output file; once complete and final checksum matches, mark transfer 'complete', store path in DB, show 'Open file' button, and optionally run user-specified post-processing (e.g., open with default app)."
+      ],
+      "security": [
+        "All chunks are encrypted in transit. IV must never repeat; use secure nonce: HMAC(session_key, transfer_id||chunk_index) truncated to required IV length.",
+        "Validate per-chunk CRC32 before decrypt attempt; if corrupted, request chunk resend."
+      ],
+      "ui_states": {
+        "pending": "Greyed paused card",
+        "transferring": "Progress bar with speed (KB/s) and ETA",
+        "paused": "Paused icon, resume button",
+        "failed": "Error badge and Retry",
+        "completed": "Green check with Open button"
+      }
+    },
+    "settings_and_security_flow": {
+      "controls": [
+        {"profile": ["display_name", "avatar", "device_nickname"]},
+        {"preferences": ["theme(light/dark/auto)", "auto_accept_trusted_files (boolean)", "default_download_path", "max_history_days"]},
+        {"security": ["view_device_keys (readonly fingerprints)", "revoke_trust/unpair device", "regenerate_device_key", "export_private_key (protected by passphrase)", "import_private_key (requires passphrase)"]}
+      ],
+      "key_export_policy": "Private key export only allowed with passphrase; export file encrypted using PBKDF2(salt,iterations=200000)+AES-256-GCM.",
+      "key_destroy": "Clear key from OS secure store AND overwrite file on disk with secure zeroization (follow OS file secure delete guidelines) on 'Reset app' or 'Clear keys' actions."
+    },
+    "error_handling_and_user_feedback": {
+      "error_codes": {
+        "BT001": "Bluetooth adapter not present",
+        "BT002": "Permission denied by OS",
+        "BT003": "Pairing timeout",
+        "NET001": "Channel send failure",
+        "DB001": "Database write/read error",
+        "FS001": "Insufficient disk space",
+        "SEC001": "Encryption handshake failed"
+      },
+      "user_messages": {
+        "BT002": "Bluetooth permission required. Go to System Settings → Security & Privacy → Bluetooth and enable BlueBeam.",
+        "FS001": "There is not enough disk space to accept the file. Free up space and try again."
+      },
+      "logging": {
+        "format": "structured JSON per line",
+        "fields": ["timestamp_utc","level","module","code","message","context"],
+        "levels": ["DEBUG","INFO","WARN","ERROR"],
+        "storage": "Local logs rotate daily, keep last 14 days; logs do NOT contain plaintext message content or file payloads (only metadata hashes)."
+      }
+    },
+    "offline_and_reconnect_behavior": {
+      "queueing": "Outbound messages and transfer chunks are queued and persisted until peer is reachable; queue uses FIFO with small-message priority flag",
+      "reconnect_strategy": {
+        "initial_backoff_ms": 500,
+        "multiplier": 2,
+        "max_backoff_ms": 10000,
+        "max_attempts": 6
+      },
+      "notification": "Show banner 'Reconnecting to {device_name} — attempt 3 of 6' and allow user to 'Cancel attempts'"
+    }
+  },
+  "protocols_and_binary_formats": {
+    "frame_defaults": {
+      "endianness": "little",
+      "message_framing": "Varint length prefix OR explicit 4-byte length prefix for RFCOMM",
+      "compression": "Optional LZ4 per message (negotiated at handshake)"
+    },
+    "message_frame_struct_c": "/* packed struct */ struct MessageFrame { uint32_t length; uint64_t id_high; uint64_t id_low; uint64_t conversation_id_high; uint64_t conversation_id_low; uint64_t sender_id_high; uint64_t sender_id_low; uint64_t receiver_id_high; uint64_t receiver_id_low; uint64_t timestamp_unix_ms; uint32_t content_size; uint8_t content[content_size]; uint32_t crc32; }",
+    "control_frames": [
+      {"type":"ACK","payload":"{message_id}"},
+      {"type":"READ_RECEIPT","payload":"{message_id}"},
+      {"type":"TRANSFER_START","payload":"{transfer_id, filename, filesize, chunk_size, sha256}"},
+      {"type":"TRANSFER_CHUNK","payload":"{transfer_id, chunk_index, chunk_bytes_len, crc32}"},
+      {"type":"TRANSFER_RESUME","payload":"{transfer_id, last_ack_chunk_index}"},
+      {"type":"PING","payload":""},
+      {"type":"PONG","payload":""}
+    ],
+    "frame_sequence_example": ["TRANSFER_START -> multiple(TRANSFER_CHUNK+ACK) -> TRANSFER_END (implicit when chunks match total_chunks) -> TRANSFER_VERIFY (sha256) -> TRANSFER_COMPLETE"]
+  },
+  "encryption_and_key_lifecycle": {
+    "root_keys": {
+      "device_key": {
+        "type": "RSA-4096",
+        "purpose": "Device identity, long-lived",
+        "storage": {"macos":"Keychain","windows":"DPAPI","linux":"GNOME Keyring or encrypted file"},
+        "rotation_policy": "Manual only (user-triggered); rotating device_key invalidates existing trust relationships"
+      }
+    },
+    "session_keys": {
+      "handshake": "ECDH Curve25519 ephemeral keypair; both parties compute shared_secret",
+      "derive": "Use HKDF-SHA256(shared_secret, salt=handshake_nonce) -> produce 32-byte session_key for AES-256-GCM",
+      "usage": "Encrypt messages and file chunks with per-message IV derived from (session_key || message_sequence_number) via HMAC-SHA256 truncate",
+      "zeroization": "Overwrite session key memory with 0x00 immediately on disconnect; use OS secure memory APIs when available"
+    },
+    "crypto_primitives": {
+      "AEAD": "AES-256-GCM with 128-bit tag",
+      "hash": "SHA-256",
+      "kdf": "HKDF-SHA256",
+      "signature": "RSASSA-PSS with SHA-256 for device key signatures"
+    },
+    "handshake_steps": [
+      "1) Client (initiator) sends HELLO with its ephemeral public key, supported features, and signature of ephemeral public key signed by device_key_public (to bind ephemeral to device identity).",
+      "2) Server replies with HELLO_ACK with its ephemeral public key and signature.",
+      "3) Both compute shared_secret = X25519(ephemeral_priv, ephemeral_pub_remote).",
+      "4) Verify signatures and optionally compare short fingerprint strings with user-visible representation.",
+      "5) Derive session_key and confirm via challenge-response (e.g., exchange HMACs of known nonce)."
+    ]
+  },
+  "database_schema_and_sql": {
+    "engine": "SQLite 3.x (optionally compiled with SQLCipher)",
+    "pragma_recommendations": ["PRAGMA journal_mode=WAL;", "PRAGMA synchronous=NORMAL;", "PRAGMA temp_store=MEMORY;"],
+    "create_statements": {
+      "devices": "CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, bluetooth_address TEXT UNIQUE NOT NULL, trusted INTEGER DEFAULT 0, last_seen INTEGER, fingerprint TEXT); CREATE INDEX IF NOT EXISTS idx_devices_addr ON devices(bluetooth_address);",
+      "messages": "CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, conversation_id TEXT, sender_id TEXT, receiver_id TEXT, content BLOB, timestamp INTEGER, status TEXT CHECK(status IN ('sent','delivered','read')) DEFAULT 'sent'); CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);",
+      "files": "CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, sender_id TEXT, receiver_id TEXT, filename TEXT, size INTEGER, checksum TEXT, path TEXT, timestamp INTEGER, status TEXT CHECK(status IN ('pending','in_progress','complete','failed')) DEFAULT 'pending');"
+    },
+    "vacuum_and_maintenance": "VACUUM monthly; provide 'Compact DB' option in settings; backups done as encrypted file copies with timestamp in user downloads/BlueBeam/backups",
+    "db_paths": {
+      "macos": "~/Library/Application Support/BlueBeam/bluebeam.db",
+      "windows": "%APPDATA%\\BlueBeam\\bluebeam.db",
+      "linux": "~/.local/share/bluebeam/bluebeam.db"
+    }
+  },
+  "build_packaging_ci_cd": {
+    "local_dev_env": {
+      "macos": "Xcode toolchain, Homebrew for dependencies, rustup for Rust",
+      "windows": "Visual Studio 2022 toolchain, vcpkg for deps, rustup",
+      "linux": "GCC/Clang, make/cmake, rustup, pkg-config"
+    },
+    "ci": {
+      "platforms": ["macos-latest", "windows-latest", "ubuntu-latest"],
+      "steps": [
+        "checkout",
+        "lint (clang-tidy for C/C++; cargo fmt + clippy for Rust)",
+        "unit tests",
+        "integration tests (native Bluetooth hardware may be on dedicated runners or emulated)",
+        "build artifacts",
+        "sign artifacts (requires secure secrets)",
+        "upload to release channel"
+      ]
+    },
+    "packagers": {
+      "macos": "create signed .app bundle, notarize with Apple API, produce .dmg",
+      "windows": "msi built with WiX or NSIS wrapper, sign with EV cert",
+      "linux": "AppImage builder + optional .deb/.rpm packaging"
+    },
+    "update_policy": {
+      "stable_channel": "manual release builds to stable",
+      "auto_update": "client checks signed update manifest over HTTPS; download and verify signature before installing; rollback to previous version kept on disk"
+    }
+  },
+  "testing_matrix": {
+    "unit_tests": {"coverage_goal_pct": 85, "tools": ["cargo test", "gtest or Catch2 for C++ modules"]},
+    "integration_tests": [
+      "pairing handshake across OS pairs (mac↔win, mac↔linux, win↔linux)",
+      "message round-trip under interference (simulate packet loss)",
+      "file transfer resume after mid-transfer disconnect",
+      "DB recovery after abrupt kill"
+    ],
+    "system_tests": ["installer smoke tests", "auto-update and rollback", "startup on boot (with user opt-in)"],
+    "performance_tests": [
+      {"name": "message_latency", "target_ms": 100, "method": "measure round-trip under BT5-compatible environment"},
+      {"name": "file_throughput", "target_MB_s": 5, "method": "transfer 1GB file over BT5 device pair"}
+    ],
+    "accessibility_tests": ["tab order, screen reader flow, contrast check"],
+    "security_tests": ["fuzz handshake messages", "static analysis (Semgrep/clang analyzer)", "periodic pen testing"]
+  },
+  "performance_targets_and_telemetry": {
+    "targets": {"message_latency_ms": 100, "file_throughput_MB_s": 5, "cpu_pct": 10, "ram_MB": 400, "battery_pct_per_hour": 3},
+    "telemetry_policy": "No telemetry enabled by default. Admin/offline logs may be optionally uploaded by user for debugging after explicit consent.",
+    "profiling": "Provide debug build with profiling hooks to collect CPU, memory, and latency snapshots"
+  },
+  "accessibility_localization": {
+    "accessibility": {
+      "wcag_level": "AA",
+      "keyboard": {"all_interactive_elements_focusable": true, "shortcuts": {"open_settings": "Ctrl/Cmd+,", "toggle_theme": "Ctrl/Cmd+T", "new_message": "Ctrl/Cmd+N"}},
+      "screen_reader": {"all_elements_have_aria_labels": true, "dialog_roles": "dialog", "alert_roles": "alert"}
+    },
+    "localization": {
+      "default_language": "en-US",
+      "supported_languages_initial": ["en-US","es-ES","fr-FR","de-DE","zh-CN"],
+      "i18n_files": "Use ICU message format; store translations in /i18n/<lang>.json",
+      "rtl_support": false for v1.0 (flag for v1.1)
+    }
+  },
+  "privacy_security_legal": {
+    "privacy_principles": ["Data remains local by default","No PII transmitted to servers","User consent required for backups or key export"],
+    "legal": {
+      "privacy_policy_stub": "BlueBeam stores personal profile data and device fingerprints locally. No data is uploaded without explicit user consent. Users may export their data; exported keys must be passphrase-protected.",
+      "export_warning": "Exporting private keys weakens security; require passphrase and warn user"
+    },
+    "compliance": ["OWASP Top 10 considered", "AES-NIST crypto", "FIPS 140-3 recommended for enterprise builds"],
+    "secure_defaults": ["auto_accept_files disabled", "auto-start disabled", "secure storage for private keys"]
+  },
+  "release_and_maintainability": {
+    "release_checklist": [
+      "All unit and integration tests green",
+      "Signed artifacts verified",
+      "Notarization complete for macOS",
+      "Installer smoke tests pass",
+      "Accessibility audit and localization checks pass",
+      "Security scan results acceptable"
+    ],
+    "maintenance": {
+      "backups": "Daily encrypted local DB backup; rollover 30 days",
+      "logs": "Rotate daily; purge older than 14 days by default",
+      "support": "Provide in-app report tool that optionally attaches logs and DB extract after clear consent"
+    },
+    "developer_docs": "In-repo docs for coding standards, FFI boundary guidelines, testing harness, and security handbook"
+  },
+  "error_codes_reference": {
+    "BT001": {"message": "Bluetooth adapter not present", "user_action": "Enable Bluetooth or use a device with Bluetooth adapter"},
+    "BT002": {"message": "Bluetooth permission denied", "user_action": "Grant Bluetooth permission in OS settings"},
+    "BT003": {"message": "Pairing timed out", "user_action": "Retry pairing and keep devices close"},
+    "DB001": {"message": "Database write failed", "user_action": "Restart app; if persists export logs and contact support"},
+    "FS001": {"message": "Insufficient disk space", "user_action": "Free up disk space or change download path"},
+    "SEC001": {"message": "Encryption handshake failed", "user_action": "Re-pair device; check device clocks and retry"}
+  },
+  "debug_and_logging": {
+    "log_levels": ["DEBUG","INFO","WARN","ERROR"],
+    "log_policy": "Do not log message contents or file payload; log metadata (sizes, ids, status) only. Logs are encrypted at rest.",
+    "log_cmdline": "--debug enables full logging; do not enable in production installs unless user opted into advanced diagnostics"
+  },
+  "developer_integration_samples": {
+    "sample_sql": {
+      "create_devices_table": "CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, bluetooth_address TEXT UNIQUE NOT NULL, trusted INTEGER DEFAULT 0, last_seen INTEGER, fingerprint TEXT);"
+    },
+    "sample_c_frame_struct": "typedef struct __attribute__((packed)) { uint32_t length; uint64_t id[2]; uint64_t conv_id[2]; uint64_t sender_id[2]; uint64_t receiver_id[2]; uint64_t ts_ms; uint32_t content_len; // followed by content_len bytes uint32_t crc32; } frame_t;",
+    "sample_handshake_pseudocode": "generate_ephemeral(); send(HELLO, ephemeral_pub, signed(ephemeral_pub)); recv(HELLO_ACK); verify_signature; shared = x25519(priv, peer_pub); session_key = hkdf(shared, salt);"
+  },
+  "ops_and_ci_templates": {
+    "ci_steps": ["checkout", "install-deps", "lint", "unit-tests", "build-matrix (macos,windows,linux)", "integration-tests", "packagers(sign)", "upload-artifacts"],
+    "secrets_handling": "Store signing certs and passphrases in secure CI secrets; restrict access",
+    "release_channels": ["nightly", "beta", "stable"]
+  },
+  "future_extensions": {
+    "v1.1_candidates": ["Group chat across >2 devices using multi-point transfer with per-recipient session keys", "Wi-Fi Direct fallback for higher throughput", "QR-based pairing", "Mobile companion apps (Android/iOS) using BLE + LAN"],
+    "plugin_architecture": "Future release to allow protocol plugins (e.g., integrate LAN fallback or cloud sync) — ensure plugin sandboxing and explicit user enable"
+  },
+  "internal_notes": {
+    "qa": [
+      "Test pairing and transfers under varying SNR (simulate interference)",
+      "Test DB corruption recovery and restore from backup",
+      "Run accessibility keyboard-only scenarios",
+      "Validate memory zeroization with dynamic analysis tools"
+    ],
+    "dev": [
+      "Place all platform-specific Bluetooth code behind a clean interface: IBluetoothStack { scan(), connect(), open_channel(), send(), recv(), close() }",
+      "All crypto operations in dedicated module; avoid mixing with UI code",
+      "Use Rust for protocol/state machine for safety; C++ for UI bindings"
+    ],
+    "security": [
+      "Threat model: treat local network as hostile; assume physical attacker could capture Bluetooth traffic",
+      "Mitigations: ephemeral ECDH, per-session keys, chunk integrity and retry policies, UI-based fingerprint verification"
+    ]
+  }
+}
