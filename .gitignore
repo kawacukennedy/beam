@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+bin/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+
+# IDE files
+.vscode/
+.idea/
+*.xcodeproj/
+*.sln
+*.suo
+*.user
+*.vcproj.user
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.db
