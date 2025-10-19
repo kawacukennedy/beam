@@ -5,12 +5,12 @@
 #include <memory>
 #include <chrono>
 #include <string>
-#include "database/database.h"
-#include "crypto/crypto.h"
-#include "bluetooth/bluetooth.h"
-#include "messaging/messaging.h"
-#include "file_transfer/file_transfer.h"
-#include "settings/settings.h"
+#include "database.h"
+#include "crypto.h"
+#include "bluetooth.h"
+#include "messaging.h"
+#include "file_transfer.h"
+#include "settings.h"
 
 class UI::Impl {
 public:

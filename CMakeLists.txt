@@ -22,17 +22,7 @@ endif()
 # Find dependencies
 find_package(Threads REQUIRED)
 
-# Rust integration
-include(FetchContent)
-FetchContent_Declare(
-    Corrosion
-    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG v0.4.7
-)
-FetchContent_MakeAvailable(Corrosion)
-
-corrosion_import_crate(MANIFEST_PATH core/bluetooth/Cargo.toml)
-corrosion_import_crate(MANIFEST_PATH core/crypto/Cargo.toml)
+# Rust integration disabled for now
 
 # SQLite amalgamation
 add_library(sqlite3 STATIC src/c/sqlite3.c)
@@ -42,11 +32,10 @@ target_include_directories(sqlite3 PUBLIC src/c)
 add_library(database db/database.cpp)
 target_link_libraries(database sqlite3 Threads::Threads)
 
-# Rust libraries
-corrosion_link_libraries(database bluebeam_crypto)
-corrosion_link_libraries(database bluebeam_bluetooth)
+add_library(crypto crypto/crypto.cpp)
+# Rust disabled
 
-# Platform-specific Bluetooth sources (C++ wrappers)
+# Platform-specific Bluetooth sources
 if(APPLE)
     add_library(bluetooth platforms/macos/bluetooth.mm)
 elseif(WIN32)
@@ -54,6 +43,7 @@ elseif(WIN32)
 elseif(UNIX AND NOT APPLE)
     add_library(bluetooth platforms/linux/bluetooth_linux.cpp)
 endif()
+# Rust disabled
 
 add_library(settings ui/settings.cpp)
 
@@ -73,16 +63,16 @@ if(APPLE)
     find_library(SECURITY Security REQUIRED)
     find_package(OpenSSL REQUIRED)
     add_executable(BlueBeam ui/main.cpp platforms/macos/ui_macos.mm platforms/macos/ui_macos.h)
-    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database bluebeam_crypto bluebeam_bluetooth bluetooth messaging file_transfer settings auto_update)
+    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database crypto bluetooth messaging file_transfer settings auto_update)
 elseif(WIN32)
     add_executable(BlueBeam ui/main.cpp platforms/windows/ui_windows.cpp platforms/windows/ui_windows.h)
-    target_link_libraries(BlueBeam database bluebeam_crypto bluebeam_bluetooth bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam database crypto bluetooth messaging file_transfer)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
     add_executable(BlueBeam ui/main.cpp ui/linux/ui_linux.cpp)
     target_include_directories(BlueBeam PRIVATE ${GTK4_INCLUDE_DIRS})
-    target_link_libraries(BlueBeam ${GTK4_LIBRARIES} database bluebeam_crypto bluebeam_bluetooth bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
 endif()
 
 # Install

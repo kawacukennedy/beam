@@ -1,5 +1,5 @@
 #include "file_transfer.h"
-#include "crypto/crypto.h"
+#include "crypto.h"
 #include <fstream>
 #include <iostream>
 #include <thread>

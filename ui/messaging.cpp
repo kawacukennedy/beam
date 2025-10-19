@@ -1,5 +1,5 @@
 #include "messaging.h"
-#include "../crypto/crypto.h"
+#include "crypto.h"
 #include <cstring>
 #include <chrono>
 #include <iostream>
@@ -7,6 +7,18 @@
 #include <queue>
 #include <mutex>
 #include <functional>
+
+std::pair<uint64_t, uint64_t> parse_id(const std::string& id) {
+    // Simple hash for now; in real implementation, parse UUID
+    uint64_t h1 = std::hash<std::string>{}(id);
+    uint64_t h2 = std::hash<std::string>{}(id + "low");
+    return {h1, h2};
+}
+
+std::string id_to_string(uint64_t high, uint64_t low) {
+    // Reverse of parse_id; for now, just return a string representation
+    return std::to_string(high) + ":" + std::to_string(low);
+}
 
 class Messaging::Impl {
 public:
@@ -132,17 +144,17 @@ std::vector<uint8_t> Messaging::pack_message(const std::string& id, const std::s
     // Create frame
     MessageFrame frame;
     auto [id_high, id_low] = parse_id(id);
-    frame.id[0] = id_high;
-    frame.id[1] = id_low;
+    frame.id_high = id_high;
+    frame.id_low = id_low;
     auto [conv_high, conv_low] = parse_id(conversation_id);
-    frame.conversation_id[0] = conv_high;
-    frame.conversation_id[1] = conv_low;
+    frame.conversation_id_high = conv_high;
+    frame.conversation_id_low = conv_low;
     auto [send_high, send_low] = parse_id(sender_id);
-    frame.sender_id[0] = send_high;
-    frame.sender_id[1] = send_low;
+    frame.sender_id_high = send_high;
+    frame.sender_id_low = send_low;
     auto [recv_high, recv_low] = parse_id(receiver_id);
-    frame.receiver_id[0] = recv_high;
-    frame.receiver_id[1] = recv_low;
+    frame.receiver_id_high = recv_high;
+    frame.receiver_id_low = recv_low;
     frame.timestamp_unix_ms = timestamp;
     frame.content_size = encrypted_content.size();
     frame.length = sizeof(MessageFrame) + encrypted_content.size() + sizeof(uint32_t);
@@ -182,12 +194,12 @@ bool Messaging::unpack_message(const std::vector<uint8_t>& data, std::string& id
     if (calculated_crc != received_crc) return false;
 
     // Decrypt content
-    content = pimpl->crypto.decrypt_message(id_to_string(frame.sender_id[0], frame.sender_id[1]), encrypted_content);
+    content = pimpl->crypto.decrypt_message(id_to_string(frame.sender_id_high, frame.sender_id_low), encrypted_content);
 
-    id = id_to_string(frame.id[0], frame.id[1]);
-    conversation_id = id_to_string(frame.conversation_id[0], frame.conversation_id[1]);
-    sender_id = id_to_string(frame.sender_id[0], frame.sender_id[1]);
-    receiver_id = id_to_string(frame.receiver_id[0], frame.receiver_id[1]);
+    id = id_to_string(frame.id_high, frame.id_low);
+    conversation_id = id_to_string(frame.conversation_id_high, frame.conversation_id_low);
+    sender_id = id_to_string(frame.sender_id_high, frame.sender_id_low);
+    receiver_id = id_to_string(frame.receiver_id_high, frame.receiver_id_low);
     timestamp = frame.timestamp_unix_ms;
 
     return true;
@@ -229,11 +241,10 @@ void Messaging::receive_data(const std::string& sender_id, const std::vector<uin
     // Otherwise, it's a message
     std::string id, conversation_id, sender, receiver;
     std::vector<uint8_t> content;
-    uint8_t status;
     uint64_t timestamp;
-    if (unpack_message(data, id, conversation_id, sender, receiver, content, status, timestamp)) {
+    if (unpack_message(data, id, conversation_id, sender, receiver, content, timestamp)) {
         if (pimpl->message_callback) {
-            pimpl->message_callback(id, conversation_id, sender, receiver, content, static_cast<MessageStatus>(status));
+            pimpl->message_callback(id, conversation_id, sender, receiver, content, MessageStatus::DELIVERED);
         }
         // Send ACK
         auto ack_data = pack_ack(id);

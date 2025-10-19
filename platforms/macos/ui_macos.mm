@@ -5,12 +5,12 @@
 #include <vector>
 #include <string>
 #include <functional>
-#include "database/database.h"
-#include "bluetooth/bluetooth.h"
-#include "crypto/crypto.h"
-#include "messaging/messaging.h"
-#include "file_transfer/file_transfer.h"
-#include "settings/settings.h"
+#include "database.h"
+#include "bluetooth.h"
+#include "crypto.h"
+#include "messaging.h"
+#include "file_transfer.h"
+#include "settings.h"
 
 static Database* db = nullptr;
 static Bluetooth* bt = nullptr;
@@ -583,23 +583,23 @@ std::string generate_id() {
 
 @end
 
-class UI::Impl {
+class UIMacos::Impl {
 public:
     BlueBeamAppDelegate* delegate;
+    Database* db;
+    Messaging* messaging;
+    FileTransfer* ft;
+    Bluetooth* bt;
+    Settings* settings;
 
-    Impl() {
+    Impl(Database* d, Messaging* m, FileTransfer* f, Bluetooth* b, Settings* s) : db(d), messaging(m), ft(f), bt(b), settings(s) {
         [NSApplication sharedApplication];
         delegate = [[BlueBeamAppDelegate alloc] init];
         [NSApp setDelegate:delegate];
     }
 
     ~Impl() {
-        delete db;
-        delete bt;
-        delete crypto;
-        delete messaging;
-        delete ft;
-        delete settings;
+        // Don't delete, owned elsewhere
     }
 
     void run() {
@@ -607,9 +607,9 @@ public:
     }
 };
 
-UI::UI() : pimpl(std::make_unique<Impl>()) {}
-UI::~UI() = default;
+UIMacos::UIMacos(Database* db, Messaging* msg, FileTransfer* ft, Bluetooth* bt, Settings* st) : pimpl(std::make_unique<Impl>(db, msg, ft, bt, st)) {}
+UIMacos::~UIMacos() = default;
 
-void UI::run() {
+void UIMacos::run() {
     pimpl->run();
 }

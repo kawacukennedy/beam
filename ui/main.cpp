@@ -1,17 +1,17 @@
 #include <iostream>
-#include "database/database.h"
-#include "crypto/crypto.h"
-#include "bluetooth/bluetooth.h"
-#include "messaging/messaging.h"
-#include "file_transfer/file_transfer.h"
-#include "settings/settings.h"
-#include "auto_update/auto_update.h"
+#include "database.h"
+#include "crypto.h"
+#include "bluetooth.h"
+#include "messaging.h"
+#include "file_transfer.h"
+#include "settings.h"
+#include "auto_update.h"
 #ifdef __APPLE__
-#include "macos/ui_macos.h"
+#include "ui_macos.h"
 #elif _WIN32
-#include "windows/ui_windows.h"
+#include "ui_windows.h"
 #else
-#include "linux/ui_linux.h"
+#include "ui_linux.h"
 #endif
 #include <thread>
 #include <chrono>
