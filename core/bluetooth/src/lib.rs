@@ -4,7 +4,7 @@ use bluer::{Adapter, Device, DiscoveryFilter, DiscoveryTransport};
 use futures::stream::StreamExt;
 
 #[cfg(target_os = "macos")]
-
+use corebluetooth::CentralManager;
 
 #[cfg(target_os = "windows")]
 use winrt::windows::devices::bluetooth as bt;
