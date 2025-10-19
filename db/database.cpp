@@ -31,8 +31,8 @@ public:
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 bluetooth_address TEXT UNIQUE NOT NULL,
-                trusted BOOLEAN DEFAULT 0,
-                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                trusted INTEGER DEFAULT 0,
+                last_seen INTEGER,
                 fingerprint TEXT
             );
             CREATE TABLE IF NOT EXISTS messages (
@@ -41,7 +41,7 @@ public:
                 sender_id TEXT,
                 receiver_id TEXT,
                 content BLOB NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp INTEGER,
                 status TEXT DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'read'))
             );
             CREATE TABLE IF NOT EXISTS files (
@@ -49,10 +49,10 @@ public:
                 sender_id TEXT,
                 receiver_id TEXT,
                 filename TEXT NOT NULL,
-                size BIGINT NOT NULL,
+                size INTEGER NOT NULL,
                 checksum TEXT NOT NULL,
                 path TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp INTEGER,
                 status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'complete', 'failed'))
             );
             CREATE INDEX IF NOT EXISTS idx_devices_addr ON devices(bluetooth_address);
@@ -78,7 +78,7 @@ public:
         sqlite3_bind_text(stmt, 2, device.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, device.address.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt, 4, device.trusted ? 1 : 0);
-        sqlite3_bind_text(stmt, 5, device.last_seen.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 5, device.last_seen);
         sqlite3_bind_text(stmt, 6, device.fingerprint.c_str(), -1, SQLITE_TRANSIENT);
 
         bool success = sqlite3_step(stmt) == SQLITE_DONE;
@@ -101,7 +101,7 @@ public:
             device.name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
             device.address = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
             device.trusted = sqlite3_column_int(stmt, 3) != 0;
-            device.last_seen = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+            device.last_seen = sqlite3_column_int64(stmt, 4);
             device.fingerprint = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
             devices.push_back(device);
         }
@@ -122,7 +122,7 @@ public:
         sqlite3_bind_text(stmt, 3, message.sender_id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 4, message.receiver_id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_blob(stmt, 5, message.content.data(), message.content.size(), SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 6, message.timestamp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 6, message.timestamp);
         sqlite3_bind_text(stmt, 7, message.status.c_str(), -1, SQLITE_TRANSIENT);
 
         bool success = sqlite3_step(stmt) == SQLITE_DONE;
@@ -149,7 +149,7 @@ public:
             const void* blob = sqlite3_column_blob(stmt, 4);
             int size = sqlite3_column_bytes(stmt, 4);
             message.content.assign(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + size);
-            message.timestamp = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+            message.timestamp = sqlite3_column_int64(stmt, 5);
             message.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
             messages.push_back(message);
         }
@@ -172,7 +172,7 @@ public:
         sqlite3_bind_int64(stmt, 5, file.size);
         sqlite3_bind_text(stmt, 6, file.checksum.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 7, file.path.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 8, file.timestamp.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 8, file.timestamp);
         sqlite3_bind_text(stmt, 9, file.status.c_str(), -1, SQLITE_TRANSIENT);
 
         bool success = sqlite3_step(stmt) == SQLITE_DONE;
@@ -212,7 +212,7 @@ public:
             file.size = sqlite3_column_int64(stmt, 4);
             file.checksum = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
             file.path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
-            file.timestamp = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+            file.timestamp = sqlite3_column_int64(stmt, 7);
             file.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
             files.push_back(file);
         }

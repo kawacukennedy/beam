@@ -8,7 +8,7 @@ struct Device {
     std::string name;
     std::string address;
     bool trusted;
-    std::string last_seen;
+    int64_t last_seen;
     std::string fingerprint;
 };
 
@@ -18,7 +18,7 @@ struct Message {
     std::string sender_id;
     std::string receiver_id;
     std::vector<uint8_t> content;
-    std::string timestamp;
+    int64_t timestamp;
     std::string status;
 };
 
@@ -30,7 +30,7 @@ struct File {
     int64_t size;
     std::string checksum;
     std::string path;
-    std::string timestamp;
+    int64_t timestamp;
     std::string status;
 };
 

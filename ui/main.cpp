@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
                                       const std::string& sender_id, const std::string& receiver_id,
                                       const std::vector<uint8_t>& content, MessageStatus status) {
         std::cout << "Received message: " << id << " from " << sender_id << std::endl;
-        Message msg{id, conversation_id, sender_id, receiver_id, content, std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()), 
+        Message msg{id, conversation_id, sender_id, receiver_id, content, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(), 
                     status == MessageStatus::SENT ? "sent" : status == MessageStatus::DELIVERED ? "delivered" : status == MessageStatus::READ ? "read" : "unknown"};
         db.add_message(msg);
     });
