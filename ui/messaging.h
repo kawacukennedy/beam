@@ -69,6 +69,8 @@ public:
 
     void receive_data(const std::string& sender_id, const std::vector<uint8_t>& data);
 
+    bool pair_device(const std::string& device_id, std::function<void(const std::string& pin)> pin_callback, std::function<void(bool)> result_callback);
+
     std::vector<uint8_t> pack_message(const std::string& id, const std::string& conversation_id,
                                       const std::string& sender_id, const std::string& receiver_id,
                                       const std::vector<uint8_t>& content, uint64_t timestamp);

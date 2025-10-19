@@ -50,6 +50,8 @@ add_library(settings ui/settings.cpp)
 add_library(auto_update ui/auto_update.cpp)
 target_link_libraries(auto_update curl)
 
+add_library(error error.cpp)
+
 add_library(messaging ui/messaging.cpp)
 target_link_libraries(messaging bluetooth crypto)
 
@@ -63,16 +65,16 @@ if(APPLE)
     find_library(SECURITY Security REQUIRED)
     find_package(OpenSSL REQUIRED)
     add_executable(BlueBeam ui/main.cpp platforms/macos/ui_macos.mm platforms/macos/ui_macos.h)
-    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database crypto bluetooth messaging file_transfer settings auto_update)
+    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database crypto bluetooth messaging file_transfer settings auto_update error)
 elseif(WIN32)
     add_executable(BlueBeam ui/main.cpp platforms/windows/ui_windows.cpp platforms/windows/ui_windows.h)
-    target_link_libraries(BlueBeam database crypto bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam database crypto bluetooth messaging file_transfer error)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
     add_executable(BlueBeam ui/main.cpp ui/linux/ui_linux.cpp)
     target_include_directories(BlueBeam PRIVATE ${GTK4_INCLUDE_DIRS})
-    target_link_libraries(BlueBeam ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer error)
 endif()
 
 # Install

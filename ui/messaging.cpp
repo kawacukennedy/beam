@@ -229,6 +229,15 @@ bool Messaging::send_message(const std::string& id, const std::string& conversat
     }
 }
 
+bool Messaging::pair_device(const std::string& device_id, std::function<void(const std::string& pin)> pin_callback, std::function<void(bool)> result_callback) {
+    // Generate 6-digit PIN
+    std::string pin = std::to_string(rand() % 900000 + 100000);
+    if (pin_callback) pin_callback(pin);
+    // For now, assume success
+    if (result_callback) result_callback(true);
+    return true;
+}
+
 void Messaging::receive_data(const std::string& sender_id, const std::vector<uint8_t>& data) {
     // Check if it's an ACK
     std::string ack_message_id;
