@@ -6,8 +6,10 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <unordered_set>
 
 class Crypto;
+class Database;
 
 #pragma pack(push, 1)
 struct OBEXHeader {
@@ -66,12 +68,16 @@ struct TransferSession {
     std::string receiver_id;
     uint64_t bytes_sent;
     std::queue<FileChunk> chunk_queue;
+    std::unordered_set<uint64_t> sent_offsets;
     bool active;
+    bool paused;
+    ProgressCallback progress_cb;
+    CompletionCallback completion_cb;
 };
 
 class FileTransfer {
 public:
-    FileTransfer(Crypto& crypto);
+    FileTransfer(Crypto& crypto, Database& database);
     ~FileTransfer();
 
     using ProgressCallback = std::function<void(uint64_t sent, uint64_t total)>;
@@ -81,6 +87,10 @@ public:
     bool send_file(const std::string& path, const std::string& receiver_id,
                     ProgressCallback progress_cb = nullptr,
                     CompletionCallback completion_cb = nullptr);
+
+    bool resume_send(const std::string& file_id);
+
+    bool pause_send(const std::string& file_id);
 
     bool receive_file(const std::string& file_id, const std::string& filename, uint64_t size,
                         const std::string& checksum, const std::string& save_path,

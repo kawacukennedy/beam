@@ -81,7 +81,7 @@ add_library(messaging src/cpp/messaging/messaging.cpp)
 target_link_libraries(messaging bluetooth crypto)
 
 add_library(file_transfer src/cpp/file_transfer/file_transfer.cpp)
-target_link_libraries(file_transfer bluetooth crypto)
+target_link_libraries(file_transfer bluetooth crypto database)
 
 # Platform-specific UI
 if(APPLE)

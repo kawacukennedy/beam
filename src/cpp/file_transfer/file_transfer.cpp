@@ -1,5 +1,6 @@
 #include "file_transfer.h"
 #include "crypto/crypto.h"
+#include "database/database.h"
 #include <fstream>
 #include <iostream>
 #include <thread>
@@ -8,6 +9,7 @@
 #include <condition_variable>
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <cstring>
 #include <openssl/sha.h>
@@ -37,10 +39,11 @@ public:
         return "id_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
     }
     Crypto& crypto;
+    Database& database;
 
     uint32_t crc32_table[256];
 
-    Impl(Crypto& c) : crypto(c) {
+    Impl(Crypto& c, Database& db) : crypto(c), database(db) {
         // Initialize CRC32 table
         for (uint32_t i = 0; i < 256; ++i) {
             uint32_t crc = i;
@@ -174,36 +177,55 @@ public:
             auto it = active_transfers.find(file_id);
             if (it != active_transfers.end()) {
                 TransferSession& session = it->second;
+                if (session.paused) continue; // Skip if paused
                 transfer_lock.unlock();
 
-                 // Send chunks
-                 while (!session.chunk_queue.empty() && session.active) {
-                     FileChunk chunk = session.chunk_queue.front();
-                     session.chunk_queue.pop();
-                     bool is_final = session.chunk_queue.empty();
+                // Send chunks
+                while (!session.chunk_queue.empty() && session.active && !session.paused) {
+                    FileChunk chunk = session.chunk_queue.front();
+                    session.chunk_queue.pop();
+                    bool is_final = session.chunk_queue.empty();
 
-                     auto packet = create_chunk_packet(chunk, is_final, session.file_id);
-                     if (data_sender && data_sender(session.receiver_id, packet)) {
-                         session.bytes_sent += chunk.data.size();
-                         // Send ACK expected, but for now assume success
-                     } else {
-                         // Retry logic
-                         if (chunk.retry_count < MAX_RETRIES) {
-                             chunk.retry_count++;
-                             session.chunk_queue.push(chunk); // Requeue
-                             std::this_thread::sleep_for(std::chrono::milliseconds(BACKOFF_MS * chunk.retry_count));
-                         }
-                     }
+                    auto packet = create_chunk_packet(chunk, is_final, session.file_id);
+                    if (data_sender && data_sender(session.receiver_id, packet)) {
+                        session.bytes_sent += chunk.data.size();
+                        session.sent_offsets.insert(chunk.offset);
+                        database.update_chunk_sent(session.file_id, chunk.offset, true);
+                        // Update progress
+                        if (session.progress_cb) {
+                            session.progress_cb(session.bytes_sent, session.file_size);
+                        }
+                    } else {
+                        // Retry logic
+                        if (chunk.retry_count < MAX_RETRIES) {
+                            chunk.retry_count++;
+                            session.chunk_queue.push(chunk); // Requeue
+                            database.add_transfer_chunk({session.file_id, chunk.offset, chunk.checksum, false, chunk.retry_count});
+                            std::this_thread::sleep_for(std::chrono::milliseconds(BACKOFF_MS * chunk.retry_count));
+                        } else {
+                            // Failed after max retries
+                            session.active = false;
+                            database.update_file_status(session.file_id, "failed");
+                            if (session.completion_cb) {
+                                session.completion_cb(false, "Transfer failed after max retries");
+                            }
+                            break;
+                        }
+                    }
 
-                     // Update progress
-                     // TODO: Call progress callback
-                 }
+                    if (is_final && session.active) {
+                        database.update_file_status(session.file_id, "complete");
+                        if (session.completion_cb) {
+                            session.completion_cb(true, "");
+                        }
+                    }
+                }
             }
         }
     }
 };
 
-FileTransfer::FileTransfer(Crypto& crypto) : pimpl(std::make_unique<Impl>(crypto)) {
+FileTransfer::FileTransfer(Crypto& crypto, Database& database) : pimpl(std::make_unique<Impl>(crypto, database)) {
     // Start transfer processing thread
     std::thread(&Impl::process_transfer_queue, pimpl.get()).detach();
 }
@@ -211,6 +233,34 @@ FileTransfer::FileTransfer(Crypto& crypto) : pimpl(std::make_unique<Impl>(crypto
 FileTransfer::~FileTransfer() {
     pimpl->stop_processing = true;
     pimpl->queue_cv.notify_all();
+}
+
+bool FileTransfer::pause_send(const std::string& file_id) {
+    std::lock_guard<std::mutex> lock(pimpl->transfer_mutex);
+    auto it = pimpl->active_transfers.find(file_id);
+    if (it != pimpl->active_transfers.end()) {
+        it->second.paused = true;
+        pimpl->database.update_file_status(file_id, "paused");
+        return true;
+    }
+    return false;
+}
+
+bool FileTransfer::resume_send(const std::string& file_id) {
+    std::lock_guard<std::mutex> lock(pimpl->transfer_mutex);
+    auto it = pimpl->active_transfers.find(file_id);
+    if (it != pimpl->active_transfers.end()) {
+        it->second.paused = false;
+        pimpl->database.update_file_status(file_id, "in_progress");
+        // Re-queue if not already
+        {
+            std::lock_guard<std::mutex> qlock(pimpl->queue_mutex);
+            pimpl->transfer_queue.push(file_id);
+        }
+        pimpl->queue_cv.notify_one();
+        return true;
+    }
+    return false;
 }
 
 std::vector<uint8_t> FileTransfer::create_connect_packet() {
@@ -332,7 +382,7 @@ bool FileTransfer::parse_obex_packet(const std::vector<uint8_t>& data, OBEXHeade
 }
 
 bool FileTransfer::send_file(const std::string& path, const std::string& receiver_id,
-                             ProgressCallback progress_cb, CompletionCallback completion_cb) {
+                              ProgressCallback progress_cb, CompletionCallback completion_cb) {
     if (!std::filesystem::exists(path)) {
         if (completion_cb) completion_cb(false, "File does not exist");
         return false;
@@ -354,6 +404,17 @@ bool FileTransfer::send_file(const std::string& path, const std::string& receive
     std::string file_id = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
     std::string filename = file_path.filename().string();
 
+    // Add to database
+    File file_record{file_id, "self", receiver_id, filename, (int64_t)file_size, checksum, path, "", "in_progress"};
+    pimpl->database.add_file(file_record);
+
+    // Create chunks and store in database
+    auto chunks = pimpl->create_chunks(path, file_id);
+    for (auto& chunk : chunks) {
+        FileTransferChunk db_chunk{file_id, chunk.offset, chunk.checksum, false, 0};
+        pimpl->database.add_transfer_chunk(db_chunk);
+    }
+
     // Create transfer session
     TransferSession session;
     session.file_id = file_id;
@@ -363,10 +424,24 @@ bool FileTransfer::send_file(const std::string& path, const std::string& receive
     session.receiver_id = receiver_id;
     session.bytes_sent = 0;
     session.active = true;
+    session.paused = false;
+    session.progress_cb = progress_cb;
+    session.completion_cb = completion_cb;
 
-    auto chunks = pimpl->create_chunks(path, file_id);
+    // Load sent offsets from database
+    auto db_chunks = pimpl->database.get_transfer_chunks(file_id);
+    for (const auto& db_chunk : db_chunks) {
+        if (db_chunk.sent) {
+            session.sent_offsets.insert(db_chunk.offset);
+            session.bytes_sent += CHUNK_SIZE; // Approximate
+        }
+    }
+
+    // Only queue unsent chunks
     for (auto& chunk : chunks) {
-        session.chunk_queue.push(chunk);
+        if (session.sent_offsets.find(chunk.offset) == session.sent_offsets.end()) {
+            session.chunk_queue.push(chunk);
+        }
     }
 
     {
@@ -387,24 +462,12 @@ bool FileTransfer::send_file(const std::string& path, const std::string& receive
         pimpl->data_sender(receiver_id, connect_packet);
     }
 
-    // Send Put packet with file data (simplified, send all at once)
-    auto file_data = std::vector<uint8_t>(file_size);
-    // Read file data
-    std::ifstream file(path, std::ios::binary);
-    file.read(reinterpret_cast<char*>(file_data.data()), file_size);
-
-    auto put_packet = create_put_packet(filename, file_size, file_data, true, receiver_id);
+    // Send initial PUT packet with metadata (no body for chunked)
+    auto put_packet = create_put_packet(filename, file_size, {}, false, file_id);
     if (pimpl->data_sender) {
         pimpl->data_sender(receiver_id, put_packet);
     }
 
-    // Send Disconnect
-    auto disconnect_packet = create_disconnect_packet();
-    if (pimpl->data_sender) {
-        pimpl->data_sender(receiver_id, disconnect_packet);
-    }
-
-    if (completion_cb) completion_cb(true, "");
     return true;
 }
 
@@ -437,7 +500,7 @@ void FileTransfer::receive_packet(const std::string& sender_id, const std::vecto
     if (!parse_obex_packet(data, header, headers)) return;
 
     if (header.opcode == static_cast<uint8_t>(OBEXOpcode::CONNECT)) {
-        // Handle connect
+        // Handle connect - perhaps initiate transfer
     } else if (header.opcode == static_cast<uint8_t>(OBEXOpcode::PUT)) {
         // Parse headers
         size_t offset = 0;
@@ -468,20 +531,25 @@ void FileTransfer::receive_packet(const std::string& sender_id, const std::vecto
         }
 
         if (!filename.empty() && pimpl->incoming_file_callback && pimpl->current_file_id.empty()) {
-            pimpl->incoming_file_callback(filename, file_size, [this, filename, file_size, body, last_hi](bool accept, const std::string& save_path) {
+            pimpl->incoming_file_callback(filename, file_size, [this, filename, file_size, body, last_hi, sender_id](bool accept, const std::string& save_path) {
                 if (accept) {
                     std::string file_id = pimpl->generate_id();
-                    std::string checksum = "";
+                    std::string checksum = ""; // Should be received in headers, but simplified
                     receive_file(file_id, filename, file_size, checksum, save_path, nullptr, nullptr);
-                    // Process body
+                    // Process initial body if any
                     if (!body.empty()) {
                         std::lock_guard<std::mutex> lock(pimpl->receive_mutex);
                         pimpl->receiving_files[file_id].write(reinterpret_cast<const char*>(body.data()), body.size());
                         pimpl->received_bytes[file_id] += body.size();
                         if (last_hi == static_cast<uint8_t>(OBEXHeaderId::END_OF_BODY)) {
                             pimpl->receiving_files[file_id].close();
+                            // Verify checksum
+                            std::ifstream file(pimpl->receiving_paths[file_id], std::ios::binary);
+                            std::vector<uint8_t> file_data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                            std::string calculated_checksum = pimpl->crypto.calculate_checksum(file_data);
+                            bool success = (calculated_checksum == pimpl->receiving_checksums[file_id]);
                             if (pimpl->receiving_completion[file_id]) {
-                                pimpl->receiving_completion[file_id](true, "");
+                                pimpl->receiving_completion[file_id](success, success ? "" : "Checksum mismatch");
                             }
                             pimpl->current_file_id.clear();
                         }
@@ -490,6 +558,7 @@ void FileTransfer::receive_packet(const std::string& sender_id, const std::vecto
             });
         } else if (!pimpl->current_file_id.empty() && !body.empty()) {
             std::lock_guard<std::mutex> lock(pimpl->receive_mutex);
+            // For chunked, assume body is a chunk, but simplified as whole
             pimpl->receiving_files[pimpl->current_file_id].write(reinterpret_cast<const char*>(body.data()), body.size());
             pimpl->received_bytes[pimpl->current_file_id] += body.size();
             if (pimpl->receiving_progress[pimpl->current_file_id]) {

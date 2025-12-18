@@ -34,6 +34,14 @@ struct File {
     std::string status;
 };
 
+struct FileTransferChunk {
+    std::string transfer_id;
+    uint64_t offset;
+    uint32_t checksum;
+    bool sent;
+    int retry_count;
+};
+
 class Database {
 public:
     Database();
@@ -48,6 +56,10 @@ public:
     bool add_file(const File& file);
     bool update_file_status(const std::string& id, const std::string& status);
     std::vector<File> get_files();
+
+    bool add_transfer_chunk(const FileTransferChunk& chunk);
+    bool update_chunk_sent(const std::string& transfer_id, uint64_t offset, bool sent);
+    std::vector<FileTransferChunk> get_transfer_chunks(const std::string& transfer_id);
 
 private:
     class Impl;

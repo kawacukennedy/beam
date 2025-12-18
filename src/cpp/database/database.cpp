@@ -53,10 +53,19 @@ public:
                 checksum TEXT NOT NULL,
                 path TEXT NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'complete', 'failed'))
+                status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'complete', 'failed', 'paused'))
+            );
+            CREATE TABLE IF NOT EXISTS file_transfer_chunks (
+                transfer_id TEXT NOT NULL,
+                offset BIGINT NOT NULL,
+                checksum INTEGER NOT NULL,
+                sent BOOLEAN DEFAULT 0,
+                retry_count INTEGER DEFAULT 0,
+                PRIMARY KEY (transfer_id, offset)
             );
             CREATE INDEX IF NOT EXISTS idx_devices_addr ON devices(bluetooth_address);
             CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
+            CREATE INDEX IF NOT EXISTS idx_chunks_transfer ON file_transfer_chunks(transfer_id);
         )";
 
         char* err_msg = nullptr;
@@ -220,6 +229,64 @@ public:
         sqlite3_finalize(stmt);
         return files;
     }
+
+    bool add_transfer_chunk(const FileTransferChunk& chunk) {
+        std::string sql = "INSERT OR REPLACE INTO file_transfer_chunks (transfer_id, offset, checksum, sent, retry_count) VALUES (?, ?, ?, ?, ?);";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+
+        sqlite3_bind_text(stmt, 1, chunk.transfer_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 2, chunk.offset);
+        sqlite3_bind_int(stmt, 3, chunk.checksum);
+        sqlite3_bind_int(stmt, 4, chunk.sent ? 1 : 0);
+        sqlite3_bind_int(stmt, 5, chunk.retry_count);
+
+        bool success = sqlite3_step(stmt) == SQLITE_DONE;
+        sqlite3_finalize(stmt);
+        return success;
+    }
+
+    bool update_chunk_sent(const std::string& transfer_id, uint64_t offset, bool sent) {
+        std::string sql = "UPDATE file_transfer_chunks SET sent = ? WHERE transfer_id = ? AND offset = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            return false;
+        }
+
+        sqlite3_bind_int(stmt, 1, sent ? 1 : 0);
+        sqlite3_bind_text(stmt, 2, transfer_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 3, offset);
+
+        bool success = sqlite3_step(stmt) == SQLITE_DONE;
+        sqlite3_finalize(stmt);
+        return success;
+    }
+
+    std::vector<FileTransferChunk> get_transfer_chunks(const std::string& transfer_id) {
+        std::vector<FileTransferChunk> chunks;
+        std::string sql = "SELECT transfer_id, offset, checksum, sent, retry_count FROM file_transfer_chunks WHERE transfer_id = ? ORDER BY offset ASC;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            return chunks;
+        }
+
+        sqlite3_bind_text(stmt, 1, transfer_id.c_str(), -1, SQLITE_TRANSIENT);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            FileTransferChunk chunk;
+            chunk.transfer_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            chunk.offset = sqlite3_column_int64(stmt, 1);
+            chunk.checksum = sqlite3_column_int(stmt, 2);
+            chunk.sent = sqlite3_column_int(stmt, 3) != 0;
+            chunk.retry_count = sqlite3_column_int(stmt, 4);
+            chunks.push_back(chunk);
+        }
+
+        sqlite3_finalize(stmt);
+        return chunks;
+    }
 };
 
 Database::Database() : pimpl(std::make_unique<Impl>()) {}
@@ -258,4 +325,19 @@ bool Database::update_file_status(const std::string& id, const std::string& stat
 std::vector<File> Database::get_files() {
     std::lock_guard<std::mutex> lock(pimpl->mtx);
     return pimpl->get_files();
+}
+
+bool Database::add_transfer_chunk(const FileTransferChunk& chunk) {
+    std::lock_guard<std::mutex> lock(pimpl->mtx);
+    return pimpl->add_transfer_chunk(chunk);
+}
+
+bool Database::update_chunk_sent(const std::string& transfer_id, uint64_t offset, bool sent) {
+    std::lock_guard<std::mutex> lock(pimpl->mtx);
+    return pimpl->update_chunk_sent(transfer_id, offset, sent);
+}
+
+std::vector<FileTransferChunk> Database::get_transfer_chunks(const std::string& transfer_id) {
+    std::lock_guard<std::mutex> lock(pimpl->mtx);
+    return pimpl->get_transfer_chunks(transfer_id);
 }
