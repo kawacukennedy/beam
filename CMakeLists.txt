@@ -100,13 +100,18 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Offline Bluetooth Chat and File Sharing")
 set(CPACK_PACKAGE_VENDOR "BlueBeam Team")
 
 if(APPLE)
-    set(CPACK_GENERATOR "ZIP")
-    # Code signing disabled for development
-    # add_custom_command(TARGET BlueBeam POST_BUILD
-    #     COMMAND codesign --sign "Developer ID Application" --deep --force --verbose $<TARGET_FILE:BlueBeam>
-    # )
+    set(CPACK_GENERATOR "DragNDrop")
+    # Code signing and notarization
+    find_program(CODESIGN_EXECUTABLE codesign)
+    find_program(ALTOOL_EXECUTABLE altool)
+    if(CODESIGN_EXECUTABLE)
+        add_custom_command(TARGET BlueBeam POST_BUILD
+            COMMAND ${CODESIGN_EXECUTABLE} --sign "Developer ID Application" --deep --force --verbose --options runtime $<TARGET_FILE:BlueBeam>
+        )
+    endif()
+    # Notarization would be done after packaging, e.g., via script
 elseif(WIN32)
-    set(CPACK_GENERATOR "NSIS")
+    set(CPACK_GENERATOR "WIX")
     # Code signing
     find_program(SIGNTool_EXECUTABLE signtool)
     if(SIGNTool_EXECUTABLE)
@@ -116,6 +121,17 @@ elseif(WIN32)
     endif()
 elseif(UNIX AND NOT APPLE)
     set(CPACK_GENERATOR "DEB;RPM")
+    # For AppImage, add custom target
+    find_program(LINUXDEPLOY_EXECUTABLE linuxdeploy)
+    find_program(APPIMAGETOOL_EXECUTABLE appimagetool)
+    if(LINUXDEPLOY_EXECUTABLE AND APPIMAGETOOL_EXECUTABLE)
+        add_custom_target(appimage
+            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install -- DESTDIR=${CMAKE_BINARY_DIR}/AppDir/usr
+            COMMAND ${LINUXDEPLOY_EXECUTABLE} --appdir=${CMAKE_BINARY_DIR}/AppDir --executable=${CMAKE_BINARY_DIR}/AppDir/usr/bin/BlueBeam --desktop-file=${CMAKE_SOURCE_DIR}/resources/bluebeam.desktop --icon-file=${CMAKE_SOURCE_DIR}/resources/icons/icon.png
+            COMMAND ${APPIMAGETOOL_EXECUTABLE} ${CMAKE_BINARY_DIR}/AppDir
+            COMMENT "Creating AppImage"
+        )
+    endif()
 endif()
 
 include(CPack)
