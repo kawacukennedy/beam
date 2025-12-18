@@ -1,0 +1,11 @@
+[package]
+name = "bluebeam_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bluebeam_database = { path = "../database" }
+bluebeam_bluetooth = { path = "../bluetooth" }
+bluebeam_crypto = { path = "../crypto" }
+tokio = { version = "1.0", features = ["full"] }
+chrono = "0.4"

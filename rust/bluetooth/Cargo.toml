@@ -10,6 +10,7 @@ uuid = "1.0"
 thiserror = "1.0"
 async-trait = "0.1"
 parking_lot = "0.12"
+bluebeam_crypto = { path = "../crypto" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 corebluetooth = "0.3"

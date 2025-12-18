@@ -2,6 +2,7 @@ pub mod manager;
 pub mod device;
 pub mod connection;
 pub mod transport;
+pub mod pairing;
 
 #[cfg(target_os = "macos")]
 mod macos;
