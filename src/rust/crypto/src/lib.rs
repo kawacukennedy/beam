@@ -1,94 +1,69 @@
-use aes_gcm::{Aes256Gcm, Nonce, KeyInit};
-use aes_gcm::aead::Aead;
-use curve25519_dalek::{scalar::Scalar, montgomery::MontgomeryPoint};
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::EncodePublicKey};
-use sha2::{Sha256, Digest};
-use rand::{rngs::OsRng, RngCore};
+use sodiumoxide::crypto::aead::aes256gcm;
+use sodiumoxide::crypto::scalarmult::curve25519;
+use sodiumoxide::crypto::hash::sha256;
 use std::collections::HashMap;
 use zeroize::Zeroize;
 
 pub struct CryptoManager {
-    ecdh_private: Scalar,
-    ecdh_public: MontgomeryPoint,
-    rsa_private: RsaPrivateKey,
-    rsa_public: RsaPublicKey,
-    session_keys: HashMap<String, [u8; 32]>,
+    ecdh_private: curve25519::Scalar,
+    ecdh_public: curve25519::GroupElement,
+    session_keys: HashMap<String, aes256gcm::Key>,
 }
 
 impl CryptoManager {
     pub fn new() -> Self {
-        let mut rng = OsRng;
-        let mut bytes = [0u8; 32];
-        rng.fill_bytes(&mut bytes);
-        let ecdh_private = Scalar::from_bytes_mod_order(bytes);
-        let ecdh_public = MontgomeryPoint::mul_base(&ecdh_private);
-        let rsa_private = RsaPrivateKey::new(&mut rng, 4096).expect("Failed to generate RSA key");
-        let rsa_public = RsaPublicKey::from(&rsa_private);
+        sodiumoxide::init().unwrap();
+        let (ecdh_public, ecdh_private) = curve25519::keypair();
 
         CryptoManager {
             ecdh_private,
             ecdh_public,
-            rsa_private,
-            rsa_public,
             session_keys: HashMap::new(),
         }
     }
 
     pub fn get_ecdh_public_key(&self) -> &[u8; 32] {
-        self.ecdh_public.as_bytes()
-    }
-
-    pub fn get_rsa_public_key_pem(&self) -> String {
-        self.rsa_public.to_public_key_pem(Default::default()).unwrap()
+        self.ecdh_public.as_ref()
     }
 
     pub fn derive_shared_secret(&self, peer_ecdh_public: &[u8; 32]) -> [u8; 32] {
-        let peer_public = MontgomeryPoint(*peer_ecdh_public);
-        let shared_point = peer_public * self.ecdh_private;
-        let mut hasher = Sha256::new();
-        hasher.update(shared_point.as_bytes());
-        let result = hasher.finalize();
+        let peer_public = curve25519::GroupElement::from_slice(peer_ecdh_public).unwrap();
+        let shared_point = curve25519::scalarmult(&self.ecdh_private, &peer_public).unwrap();
+        let digest = sha256::hash(shared_point.as_ref());
         let mut secret = [0u8; 32];
-        secret.copy_from_slice(&result);
+        secret.copy_from_slice(&digest.0);
         secret
     }
 
     pub fn encrypt_message(&mut self, session_id: &str, message: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let key = self.session_keys.get(session_id).ok_or("No session key")?;
-        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Invalid key")?;
-        let nonce_bytes = self.generate_nonce(session_id);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher.encrypt(nonce, message).map_err(|e| e.to_string())?;
+        let nonce = self.generate_nonce(session_id);
+        let ciphertext = aes256gcm::seal(message, None, &nonce, key);
         Ok(ciphertext)
     }
 
     pub fn decrypt_message(&mut self, session_id: &str, ciphertext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let key = self.session_keys.get(session_id).ok_or("No session key")?;
-        let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "Invalid key")?;
-        let nonce_bytes = self.generate_nonce(session_id);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|e| e.to_string())?;
+        let nonce = self.generate_nonce(session_id);
+        let plaintext = aes256gcm::open(ciphertext, None, &nonce, key).map_err(|_| "Decryption failed")?;
         Ok(plaintext)
     }
 
-    fn generate_nonce(&self, session_id: &str) -> [u8; 12] {
-        let mut hasher = Sha256::new();
-        hasher.update(session_id.as_bytes());
-        hasher.update(b"nonce");
-        let result = hasher.finalize();
-        let mut nonce = [0u8; 12];
-        nonce.copy_from_slice(&result[..12]);
-        nonce
+    fn generate_nonce(&self, session_id: &str) -> aes256gcm::Nonce {
+        let mut input = session_id.as_bytes().to_vec();
+        input.extend_from_slice(b"nonce");
+        let digest = sha256::hash(&input);
+        aes256gcm::Nonce::from_slice(&digest.0[..12]).unwrap()
     }
 
     pub fn set_session_key(&mut self, session_id: String, key: [u8; 32]) {
+        let key = aes256gcm::Key::from_slice(&key).unwrap();
         self.session_keys.insert(session_id, key);
     }
 
     pub fn calculate_checksum(&self, data: &[u8]) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        format!("{:x}", hasher.finalize())
+        let digest = sha256::hash(data);
+        format!("{:x}", digest)
     }
 }
 
@@ -96,8 +71,6 @@ impl Drop for CryptoManager {
     fn drop(&mut self) {
         // Zeroize sensitive data
         self.ecdh_private.zeroize();
-        // Note: RSA private key does not implement Zeroize; consider manual zeroization if needed
-        // self.rsa_private.zeroize();
         for key in self.session_keys.values_mut() {
             key.zeroize();
         }
@@ -124,12 +97,7 @@ pub extern "C" fn crypto_get_ecdh_public_key(ptr: *mut CryptoManager, out: *mut 
     unsafe { std::ptr::copy_nonoverlapping(key.as_ptr(), out, 32); }
 }
 
-#[no_mangle]
-pub extern "C" fn crypto_get_rsa_public_key_pem(ptr: *mut CryptoManager) -> *mut std::ffi::c_char {
-    let mgr = unsafe { &*ptr };
-    let pem = mgr.get_rsa_public_key_pem();
-    std::ffi::CString::new(pem).unwrap().into_raw()
-}
+
 
 #[no_mangle]
 pub extern "C" fn crypto_derive_shared_secret(ptr: *mut CryptoManager, peer_public: *const u8, out: *mut u8) {

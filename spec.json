@@ -1,0 +1,349 @@
+{
+  "project_overview": {
+    "project_name": "BlueBeam",
+    "version": "1.0.0",
+    "classification": "Fully offline, peer-to-peer desktop communication system",
+    "description": "BlueBeam is a hardware-proximal, Bluetooth-only desktop communication application designed for laptops. It enables secure one-to-one messaging and file transfer without internet connectivity, servers, accounts, or cloud infrastructure. All communication occurs directly between devices using Bluetooth Classic and Bluetooth Low Energy where appropriate. The application emphasizes privacy, determinism, low-level system control, and reliability across macOS, Windows, and Linux.",
+    "core_principles": [
+      "Offline-first by design",
+      "No servers, no cloud, no accounts",
+      "End-to-end encryption for all payloads",
+      "Hardware-level communication only",
+      "Deterministic behavior and low resource usage",
+      "Explicit user trust and pairing",
+      "Local-only data persistence",
+      "Platform-native UX with consistent mental model"
+    ],
+    "target_platforms": {
+      "macos": {
+        "minimum_version": "macOS 13 Ventura",
+        "architectures": ["x86_64", "arm64"],
+        "bluetooth_requirements": "Bluetooth 4.2+ adapter with CoreBluetooth support"
+      },
+      "windows": {
+        "minimum_version": "Windows 10 1903",
+        "architectures": ["x86_64"],
+        "bluetooth_requirements": "Bluetooth 4.2+ adapter with Windows.Devices.Bluetooth support"
+      },
+      "linux": {
+        "minimum_version": "Kernel 5.15",
+        "supported_distros": ["Ubuntu 22.04+", "Fedora 39+", "Arch Linux"],
+        "bluetooth_requirements": "BlueZ 5.64+ with D-Bus access"
+      }
+    },
+    "non_negotiable_requirements": [
+      "Must function with zero internet connectivity",
+      "Must not rely on external servers or APIs",
+      "Must use Bluetooth as the only transport",
+      "Must encrypt all data in transit and at rest",
+      "Must support resumable file transfers",
+      "Must provide explicit device trust management",
+      "Must store all data locally",
+      "Must be usable via keyboard-only navigation",
+      "Must not collect telemetry by default"
+    ]
+  },
+
+  "system_architecture": {
+    "architecture_style": "Layered modular architecture with strict separation between UI, core logic, platform integration, and hardware access",
+    "high_level_diagram_description": "User Interface Layer communicates with Core Logic Layer through defined FFI boundaries. Core Logic Layer interacts with Bluetooth Abstraction Layer, Crypto Layer, and Data Layer. Platform Integration Layer bridges OS-specific Bluetooth stacks and secure storage. No external network layer exists.",
+    "components": {
+      "ui_layer": {
+        "responsibilities": [
+          "Render all visual elements",
+          "Handle user input and accessibility",
+          "Display state updates from core logic",
+          "Trigger user-driven actions"
+        ],
+        "communication": "Unidirectional event dispatch to Core Logic Layer"
+      },
+      "core_logic_layer": {
+        "responsibilities": [
+          "State management",
+          "Message and file transfer orchestration",
+          "Session lifecycle management",
+          "Error classification and recovery"
+        ],
+        "threading": "Multi-threaded with message-passing concurrency"
+      },
+      "bluetooth_abstraction_layer": {
+        "responsibilities": [
+          "Unified Bluetooth API across platforms",
+          "Device discovery and connection management",
+          "Reliable packet transport over RFCOMM/LE channels"
+        ]
+      },
+      "cryptography_layer": {
+        "responsibilities": [
+          "Key generation and storage",
+          "Handshake and session establishment",
+          "Encryption, decryption, authentication"
+        ]
+      },
+      "data_layer": {
+        "responsibilities": [
+          "Persistent local storage",
+          "Schema migrations",
+          "Encrypted database access"
+        ]
+      },
+      "platform_integration_layer": {
+        "responsibilities": [
+          "OS Bluetooth stack integration",
+          "Secure key storage",
+          "Filesystem access",
+          "Installer and update hooks"
+        ]
+      }
+    },
+    "data_flow": {
+      "message_send": [
+        "User input captured by UI",
+        "UI dispatches SendMessage event",
+        "Core logic validates and serializes message",
+        "Crypto layer encrypts payload",
+        "Bluetooth layer transmits encrypted frame",
+        "Receiver decrypts, validates, persists, and acknowledges"
+      ],
+      "file_transfer": [
+        "User selects file",
+        "Core logic computes metadata and checksum",
+        "File chunked and streamed",
+        "Each chunk encrypted and transmitted",
+        "Receiver validates and reconstructs file"
+      ]
+    },
+    "memory_management": {
+      "strategy": "RAII and ownership-based memory management",
+      "rules": [
+        "No unbounded buffers",
+        "All allocations size-checked",
+        "Sensitive memory zeroized after use",
+        "No shared mutable state across threads"
+      ]
+    },
+    "error_handling": {
+      "approach": "Typed error propagation with user-safe mapping",
+      "layers": [
+        "Low-level error codes",
+        "Domain-specific errors",
+        "User-facing messages"
+      ]
+    },
+    "security_layers": [
+      "Hardware isolation",
+      "Transport encryption",
+      "Application-level authentication",
+      "Local encrypted persistence",
+      "Explicit trust confirmation"
+    ]
+  },
+
+  "tech_stack": {
+    "frontend": {
+      "macos": {
+        "framework": "Cocoa (AppKit)",
+        "language": "Objective-C++",
+        "reasoning": "Direct access to CoreBluetooth and native macOS UI"
+      },
+      "windows": {
+        "framework": "WinUI 3",
+        "language": "C++/WinRT",
+        "reasoning": "Native Bluetooth and system integration"
+      },
+      "linux": {
+        "framework": "GTK4",
+        "language": "C",
+        "reasoning": "Low-level access and wide distro support"
+      }
+    },
+    "core_logic": {
+      "language": "Rust",
+      "version": "1.80",
+      "reasons": [
+        "Memory safety",
+        "Strong concurrency primitives",
+        "FFI compatibility",
+        "Crypto ecosystem"
+      ]
+    },
+    "cryptography": {
+      "libraries": {
+        "primary": "libsodium 1.0.19",
+        "hash": "SHA-256",
+        "key_exchange": "X25519",
+        "symmetric_encryption": "AES-256-GCM"
+      }
+    },
+    "data_layer": {
+      "database": "SQLite 3.45",
+      "encryption": "SQLCipher-compatible AES-256",
+      "storage_paths": {
+        "macos": "~/Library/Application Support/BlueBeam/",
+        "windows": "%APPDATA%\\BlueBeam\\",
+        "linux": "~/.local/share/bluebeam/"
+      }
+    },
+    "build_and_deploy": {
+      "build_system": {
+        "core": "Cargo",
+        "native": "CMake",
+        "integration": "C ABI FFI"
+      },
+      "packaging": {
+        "macos": ".dmg (signed and notarized)",
+        "windows": ".msi (EV signed)",
+        "linux": [".AppImage", ".deb", ".rpm"]
+      }
+    }
+  },
+
+  "ui_ux": {
+    "design_system": {
+      "colors": {
+        "primary": "#2563EB",
+        "secondary": "#1E40AF",
+        "accent": "#7C3AED",
+        "background_light": "#FFFFFF",
+        "background_dark": "#0F172A",
+        "surface_light": "#F1F5F9",
+        "surface_dark": "#111827",
+        "text_primary_light": "#020617",
+        "text_primary_dark": "#F8FAFC",
+        "success": "#16A34A",
+        "warning": "#F59E0B",
+        "error": "#DC2626",
+        "info": "#0EA5E9"
+      },
+      "typography": {
+        "macos": ["SF Pro", "Inter"],
+        "windows": ["Segoe UI"],
+        "linux": ["Inter", "Ubuntu"],
+        "sizes": {
+          "h1": 32,
+          "h2": 24,
+          "h3": 20,
+          "body": 16,
+          "caption": 12
+        }
+      },
+      "spacing": {
+        "base_unit": 8,
+        "scale": [4, 8, 16, 24, 32, 48]
+      },
+      "animation": {
+        "durations_ms": {
+          "fast": 120,
+          "medium": 240,
+          "slow": 360
+        },
+        "curve": "cubic-bezier(0.4,0,0.2,1)"
+      }
+    },
+    "screens": {
+      "welcome": {
+        "purpose": "Initial onboarding",
+        "components": ["title", "description", "permission_button"],
+        "navigation": "Leads to profile setup"
+      },
+      "device_discovery": {
+        "purpose": "Show nearby devices",
+        "components": ["device_list", "refresh_button"],
+        "states": ["scanning", "empty", "error"]
+      },
+      "pairing": {
+        "purpose": "Establish trust",
+        "components": ["pin_display", "confirm_button"]
+      },
+      "chat": {
+        "purpose": "Messaging",
+        "components": ["message_list", "composer", "send_button"]
+      },
+      "file_transfer": {
+        "purpose": "Send/receive files",
+        "components": ["progress_bar", "pause_button", "resume_button"]
+      },
+      "settings": {
+        "purpose": "Configure app",
+        "components": ["toggles", "security_options"]
+      }
+    },
+    "ux_flows": {
+      "onboarding": [
+        "Launch app",
+        "Grant Bluetooth permission",
+        "Set display name",
+        "Begin discovery"
+      ],
+      "pairing": [
+        "Select device",
+        "Verify PIN",
+        "Establish trust"
+      ],
+      "messaging": [
+        "Compose message",
+        "Encrypt and send",
+        "Receive acknowledgment"
+      ],
+      "file_transfer": [
+        "Select file",
+        "Chunk and encrypt",
+        "Transfer with progress",
+        "Verify checksum"
+      ]
+    }
+  },
+
+  "performance": {
+    "startup_time_ms": "<500",
+    "memory_limit_mb": 400,
+    "cpu_idle_pct": "<5",
+    "cpu_active_pct": "<20",
+    "battery_drain_pct_per_hour": "<3",
+    "transfer_speed_target_mb_s": 5
+  },
+
+  "security": {
+    "threat_model": [
+      "Passive Bluetooth sniffing",
+      "Man-in-the-middle during pairing",
+      "Local file system access by attacker"
+    ],
+    "mitigations": [
+      "Ephemeral key exchange",
+      "User-verified fingerprints",
+      "Encrypted storage",
+      "No plaintext logging"
+    ]
+  },
+
+  "testing": {
+    "unit_tests": ["crypto", "serialization", "state_machine"],
+    "integration_tests": ["pairing", "message_send", "file_resume"],
+    "platform_tests": ["macOS Bluetooth", "Windows Bluetooth", "Linux BlueZ"],
+    "security_tests": ["fuzzing", "static analysis"]
+  },
+
+  "documentation": {
+    "code_docs": "Inline + generated API docs",
+    "user_manual": [
+      "Installation",
+      "Pairing devices",
+      "Messaging",
+      "File sharing",
+      "Security"
+    ],
+    "troubleshooting": [
+      "Bluetooth permission issues",
+      "Pairing failures",
+      "Transfer interruptions"
+    ]
+  },
+
+  "future_extensions": {
+    "plugins": "Sandboxed extension interface",
+    "additional_transports": ["Wi-Fi Direct"],
+    "group_messaging": "Future version",
+    "mobile_support": "Out of scope for v1"
+  }
+}
