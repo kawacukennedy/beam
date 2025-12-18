@@ -10,3 +10,8 @@ rand = "0.8"
 base64 = "0.21"
 thiserror = "1.0"
 aes-gcm = "0.10"
+
+[lints.clippy]
+security = "warn"
+pedantic = "warn"
+nursery = "warn"

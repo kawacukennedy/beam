@@ -1,0 +1,11 @@
+[package]
+name = "bluebeam_crypto-fuzz"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+libfuzzer-sys = "0.4"
+x25519-dalek = "2.0"
+
+[dependencies.bluebeam_crypto]
+path = ".."
