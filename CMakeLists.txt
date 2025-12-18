@@ -22,32 +22,20 @@ endif()
 # Find dependencies
 find_package(Threads REQUIRED)
 
-# Rust integration
-include(ExternalProject)
-ExternalProject_Add(
-    rust_core
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/core
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND cargo build --release
-    INSTALL_COMMAND ""
-    BUILD_IN_SOURCE 1
+# Rust integration with Corrosion
+include(FetchContent)
+FetchContent_Declare(
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG v0.4.7
 )
-ExternalProject_Add(
-    rust_crypto
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/crypto
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND cargo build --release
-    INSTALL_COMMAND ""
-    BUILD_IN_SOURCE 1
-)
-ExternalProject_Add(
-    rust_bluetooth
-    SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/bluetooth
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND cargo build --release
-    INSTALL_COMMAND ""
-    BUILD_IN_SOURCE 1
-)
+FetchContent_MakeAvailable(Corrosion)
+
+corrosion_import_crate(MANIFEST_PATH rust/core/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH rust/crypto/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH rust/bluetooth/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH rust/database/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH rust/settings/Cargo.toml)
 
 # SQLite amalgamation
 add_library(sqlite3 STATIC src/c/sqlite3.c)
@@ -58,8 +46,7 @@ add_library(database src/cpp/database/database.cpp)
 target_link_libraries(database sqlite3 Threads::Threads)
 
 add_library(crypto src/cpp/crypto/crypto.cpp)
-add_dependencies(crypto rust_crypto)
-target_link_libraries(crypto ${CMAKE_SOURCE_DIR}/src/rust/crypto/target/release/libbluebeam_crypto.a)
+target_link_libraries(crypto bluebeam_crypto-static)
 
 # Platform-specific Bluetooth sources
 if(APPLE)
@@ -69,8 +56,7 @@ elseif(WIN32)
 elseif(UNIX AND NOT APPLE)
     add_library(bluetooth src/cpp/bluetooth/bluetooth_linux.cpp)
 endif()
-add_dependencies(bluetooth rust_bluetooth)
-target_link_libraries(bluetooth ${CMAKE_SOURCE_DIR}/src/rust/bluetooth/target/release/libbluebeam_bluetooth.a)
+target_link_libraries(bluetooth bluebeam_bluetooth-static)
 
 add_library(settings src/cpp/settings/settings.cpp)
 
@@ -90,19 +76,16 @@ if(APPLE)
     find_library(SECURITY Security REQUIRED)
     find_package(OpenSSL REQUIRED)
     add_executable(BlueBeam src/cpp/main.cpp src/cpp/ui/macos/ui_macos.mm)
-    add_dependencies(BlueBeam rust_core)
-    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} ${CMAKE_SOURCE_DIR}/src/rust/core/target/release/libbluebeam_core.a database crypto bluetooth messaging file_transfer settings auto_update)
+    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} bluebeam_core-static database crypto bluetooth messaging file_transfer settings auto_update)
 elseif(WIN32)
     add_executable(BlueBeam src/cpp/main.cpp src/cpp/ui/windows/ui_windows.cpp)
-    add_dependencies(BlueBeam rust_core)
-    target_link_libraries(BlueBeam ${CMAKE_SOURCE_DIR}/src/rust/core/target/release/libbluebeam_core.a database crypto bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam bluebeam_core-static database crypto bluetooth messaging file_transfer)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
     add_executable(BlueBeam src/cpp/main.cpp src/cpp/ui/linux/ui_linux.cpp)
-    add_dependencies(BlueBeam rust_core)
     target_include_directories(BlueBeam PRIVATE ${GTK4_INCLUDE_DIRS})
-    target_link_libraries(BlueBeam ${CMAKE_SOURCE_DIR}/src/rust/core/target/release/libbluebeam_core.a ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam bluebeam_core-static ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
 endif()
 
 # Install

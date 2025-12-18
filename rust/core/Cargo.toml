@@ -3,6 +3,9 @@ name = "bluebeam_core"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["staticlib"]
+
 [dependencies]
 bluebeam_database = { path = "../database" }
 bluebeam_bluetooth = { path = "../bluetooth" }
@@ -11,3 +14,7 @@ bluebeam_settings = { path = "../settings" }
 tokio = { version = "1.0", features = ["full"] }
 chrono = "0.4"
 thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.0"
+x25519-dalek = "2.0"
