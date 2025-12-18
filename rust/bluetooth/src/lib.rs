@@ -15,16 +15,22 @@ mod linux;
 
 use std::error::Error;
 use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub struct BluetoothError(String);
-
-impl fmt::Display for BluetoothError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Bluetooth error: {}", self.0)
-    }
+#[derive(Debug, Error)]
+pub enum BluetoothError {
+    #[error("Bluetooth not supported on this platform")]
+    NotSupported,
+    #[error("Bluetooth is disabled")]
+    Disabled,
+    #[error("Device discovery failed: {source}")]
+    DiscoveryFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Connection failed: {source}")]
+    ConnectionFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Pairing failed: {source}")]
+    PairingFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Device not found: {device_id}")]
+    DeviceNotFound { device_id: String },
 }
-
-impl Error for BluetoothError {}
 
 pub type Result<T> = std::result::Result<T, BluetoothError>;

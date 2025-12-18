@@ -7,5 +7,7 @@ edition = "2021"
 bluebeam_database = { path = "../database" }
 bluebeam_bluetooth = { path = "../bluetooth" }
 bluebeam_crypto = { path = "../crypto" }
+bluebeam_settings = { path = "../settings" }
 tokio = { version = "1.0", features = ["full"] }
 chrono = "0.4"
+thiserror = "1.0"

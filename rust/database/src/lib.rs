@@ -7,12 +7,22 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DatabaseError {
-    #[error("SQLite error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Dirs error: {0}")]
-    Dirs(String),
+    #[error("Database connection failed: {source}")]
+    ConnectionFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Database query failed: {source}")]
+    QueryFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Database migration failed: {source}")]
+    MigrationFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Database integrity error: {message}")]
+    IntegrityError { message: String },
+    #[error("IO error: {source}")]
+    Io { #[from] source: std::io::Error },
+}
+
+impl From<rusqlite::Error> for DatabaseError {
+    fn from(err: rusqlite::Error) -> Self {
+        DatabaseError::QueryFailed { source: Box::new(err) }
+    }
 }
 
 pub type DatabaseResult<T> = Result<T, DatabaseError>;
@@ -127,7 +137,9 @@ impl Database {
     }
 
     fn get_db_path() -> DatabaseResult<PathBuf> {
-        let mut data_dir = dirs::data_dir().ok_or(DatabaseError::Dirs("Data directory not found".to_string()))?;
+        let mut data_dir = dirs::data_dir().ok_or(DatabaseError::ConnectionFailed {
+            source: Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Data directory not found"))
+        })?;
         data_dir.push("bluebeam");
         std::fs::create_dir_all(&data_dir)?;
         data_dir.push("bluebeam.db");
@@ -147,7 +159,7 @@ impl Database {
         ).unwrap_or(0);
 
         if current_version < 1 {
-            Self::migration_1(conn)?;
+            Self::migration_1(conn).map_err(|e| DatabaseError::MigrationFailed { source: Box::new(e) })?;
             conn.execute("INSERT INTO schema_version (version) VALUES (1);", [])?;
         }
 

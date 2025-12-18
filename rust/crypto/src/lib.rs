@@ -3,13 +3,19 @@ use sha2::{Sha256, Digest};
 use rand::rngs::OsRng;
 use base64::{Engine as _, engine::general_purpose};
 use thiserror::Error;
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, NewAead};
 
 #[derive(Debug, Error)]
 pub enum CryptoError {
     #[error("Key exchange failed")]
-    KeyExchange,
-    #[error("Invalid key")]
+    KeyExchangeFailed,
+    #[error("Invalid key provided")]
     InvalidKey,
+    #[error("Encryption failed: {source}")]
+    EncryptionFailed { source: Box<dyn std::error::Error + Send + Sync> },
+    #[error("Decryption failed: {source}")]
+    DecryptionFailed { source: Box<dyn std::error::Error + Send + Sync> },
 }
 
 pub type Result<T> = std::result::Result<T, CryptoError>;
@@ -53,4 +59,48 @@ pub fn generate_pin_from_fingerprint(fingerprint: &str) -> String {
         pin.push(digit as char);
     }
     pin
+}
+
+pub fn encrypt_data(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>> {
+    let cipher = Aes256Gcm::new(Key::from_slice(key));
+    let nonce = Nonce::from_slice(b"unique nonce"); // In real app, use random nonce
+    let ciphertext = cipher.encrypt(nonce, data).map_err(|e| CryptoError::EncryptionFailed { source: Box::new(e) })?;
+    Ok(ciphertext)
+}
+
+pub fn decrypt_data(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>> {
+    let cipher = Aes256Gcm::new(Key::from_slice(key));
+    let nonce = Nonce::from_slice(b"unique nonce");
+    let plaintext = cipher.decrypt(nonce, data).map_err(|e| CryptoError::DecryptionFailed { source: Box::new(e) })?;
+    Ok(plaintext)
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_encrypt(data: *const u8, len: usize, out: *mut u8) -> i32 {
+    let key = b"01234567890123456789012345678901";
+    let data_slice = unsafe { std::slice::from_raw_parts(data, len) };
+    match encrypt_data(key, data_slice) {
+        Ok(enc) => {
+            unsafe {
+                std::ptr::copy(enc.as_ptr(), out, enc.len());
+            }
+            enc.len() as i32
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crypto_decrypt(data: *const u8, len: usize, out: *mut u8) -> i32 {
+    let key = b"01234567890123456789012345678901";
+    let data_slice = unsafe { std::slice::from_raw_parts(data, len) };
+    match decrypt_data(key, data_slice) {
+        Ok(dec) => {
+            unsafe {
+                std::ptr::copy(dec.as_ptr(), out, dec.len());
+            }
+            dec.len() as i32
+        }
+        Err(_) => -1,
+    }
 }
