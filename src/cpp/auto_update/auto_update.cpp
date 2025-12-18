@@ -1,4 +1,6 @@
 #include "auto_update.h"
+#include "../settings/settings.h"
+#include "../crypto/crypto.h"
 #include <iostream>
 #include <thread>
 #include <curl/curl.h>
@@ -27,8 +29,10 @@ namespace fs = std::filesystem;
 class AutoUpdate::Impl {
 public:
     std::string current_version = "1.0.0";
+    Settings* settings;
+    Crypto crypto;
 
-    Impl() {
+    Impl(Settings* s) : settings(s) {
         curl_global_init(CURL_GLOBAL_DEFAULT);
     }
 
@@ -49,9 +53,14 @@ public:
                 curl_easy_cleanup(curl);
 
                 if (res == CURLE_OK) {
-                    // Parse JSON for version
+                    // Parse JSON for version and download URL
                     std::string latest_version = "1.0.1"; // Mock
+                    std::string download_url = "https://github.com/bluebeam/bluebeam/releases/download/v1.0.1/bluebeam-update.zip"; // Mock
                     bool update = latest_version > current_version;
+                    if (update && settings->get_auto_update_enabled()) {
+                        // Automatically download and install
+                        download_and_install(download_url);
+                    }
                     callback(update, latest_version);
                 } else {
                     callback(false, "");
@@ -61,11 +70,14 @@ public:
     }
 
     void download_and_install(const std::string& url) {
-        // Download and install
+        // Download update and signature
         std::cout << "Downloading update from " << url << std::endl;
+        std::string zip_path = get_temp_path() + "/update.zip";
+        std::string sig_path = get_temp_path() + "/update.sig";
+
+        // Download zip
         CURL* curl = curl_easy_init();
         if (curl) {
-            std::string zip_path = get_temp_path() + "/update.zip";
             std::ofstream file(zip_path, std::ios::binary);
             curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
@@ -74,12 +86,57 @@ public:
             curl_easy_cleanup(curl);
             file.close();
 
-            if (res == CURLE_OK) {
-                // Extract and install
-                std::cout << "Update downloaded, installing..." << std::endl;
-                install_update(zip_path);
+            if (res != CURLE_OK) {
+                std::cerr << "Failed to download update" << std::endl;
+                return;
             }
         }
+
+        // Download signature
+        std::string sig_url = url + ".sig"; // Assume signature file
+        curl = curl_easy_init();
+        if (curl) {
+            std::ofstream sig_file(sig_path, std::ios::binary);
+            curl_easy_setopt(curl, CURLOPT_URL, sig_url.c_str());
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sig_file);
+            CURLcode res = curl_easy_perform(curl);
+            curl_easy_cleanup(curl);
+            sig_file.close();
+
+            if (res != CURLE_OK) {
+                std::cerr << "Failed to download signature" << std::endl;
+                return;
+            }
+        }
+
+        // Verify signature
+        if (!verify_signature(zip_path, sig_path)) {
+            std::cerr << "Signature verification failed" << std::endl;
+            return;
+        }
+
+        // Extract and install
+        std::cout << "Update downloaded and verified, installing..." << std::endl;
+        install_update(zip_path);
+    }
+
+    bool verify_signature(const std::string& zip_path, const std::string& sig_path) {
+        // Read zip file
+        std::ifstream zip_file(zip_path, std::ios::binary);
+        std::vector<uint8_t> data((std::istreambuf_iterator<char>(zip_file)), std::istreambuf_iterator<char>());
+        zip_file.close();
+
+        // Calculate checksum
+        std::string checksum = crypto.calculate_checksum(data);
+
+        // Read expected checksum from sig file
+        std::ifstream sig_file(sig_path);
+        std::string expected_checksum;
+        std::getline(sig_file, expected_checksum);
+        sig_file.close();
+
+        return checksum == expected_checksum;
     }
 
     std::string get_temp_path() {
@@ -204,7 +261,7 @@ private:
     }
 };
 
-AutoUpdate::AutoUpdate() : pimpl(std::make_unique<Impl>()) {}
+AutoUpdate::AutoUpdate(Settings* settings) : pimpl(std::make_unique<Impl>(settings)) {}
 AutoUpdate::~AutoUpdate() = default;
 
 void AutoUpdate::check_for_updates(std::function<void(bool update_available, const std::string& version)> callback) {

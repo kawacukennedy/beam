@@ -2,9 +2,11 @@
 #include <string>
 #include <functional>
 
+class Settings;
+
 class AutoUpdate {
 public:
-    AutoUpdate();
+    AutoUpdate(Settings* settings);
     ~AutoUpdate();
 
     void check_for_updates(std::function<void(bool update_available, const std::string& version)> callback);
