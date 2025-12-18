@@ -343,3 +343,222 @@ impl Database {
         Ok(files)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+
+    fn create_temp_db() -> Database {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        // For testing, use a simple key
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute("PRAGMA key = 'test_key';", []).unwrap();
+        Self::run_migrations(&conn).unwrap();
+        Database { conn }
+    }
+
+    #[test]
+    fn test_device_serialization() {
+        let device = Device {
+            id: "test_id".to_string(),
+            name: "Test Device".to_string(),
+            address: "00:11:22:33:44:55".to_string(),
+            trusted: true,
+            last_seen: Utc::now(),
+            fingerprint: "abc123".to_string(),
+        };
+
+        let json = serde_json::to_string(&device).unwrap();
+        let deserialized: Device = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(device.id, deserialized.id);
+        assert_eq!(device.name, deserialized.name);
+        assert_eq!(device.address, deserialized.address);
+        assert_eq!(device.trusted, deserialized.trusted);
+        assert_eq!(device.fingerprint, deserialized.fingerprint);
+    }
+
+    #[test]
+    fn test_message_serialization() {
+        let message = Message {
+            id: Uuid::new_v4().to_string(),
+            conversation_id: "conv1".to_string(),
+            sender_id: "sender".to_string(),
+            receiver_id: "receiver".to_string(),
+            content: vec![1, 2, 3, 4],
+            timestamp: Utc::now(),
+            status: MessageStatus::Sent,
+        };
+
+        let json = serde_json::to_string(&message).unwrap();
+        let deserialized: Message = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(message.id, deserialized.id);
+        assert_eq!(message.conversation_id, deserialized.conversation_id);
+        assert_eq!(message.sender_id, deserialized.sender_id);
+        assert_eq!(message.receiver_id, deserialized.receiver_id);
+        assert_eq!(message.content, deserialized.content);
+        assert_eq!(message.status, deserialized.status);
+    }
+
+    #[test]
+    fn test_file_serialization() {
+        let file = File {
+            id: Uuid::new_v4().to_string(),
+            sender_id: "sender".to_string(),
+            receiver_id: "receiver".to_string(),
+            filename: "test.txt".to_string(),
+            size: 1024,
+            checksum: "checksum123".to_string(),
+            path: "/path/to/file".to_string(),
+            timestamp: Utc::now(),
+            status: FileStatus::Pending,
+        };
+
+        let json = serde_json::to_string(&file).unwrap();
+        let deserialized: File = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(file.id, deserialized.id);
+        assert_eq!(file.sender_id, deserialized.sender_id);
+        assert_eq!(file.receiver_id, deserialized.receiver_id);
+        assert_eq!(file.filename, deserialized.filename);
+        assert_eq!(file.size, deserialized.size);
+        assert_eq!(file.checksum, deserialized.checksum);
+        assert_eq!(file.path, deserialized.path);
+        assert_eq!(file.status, deserialized.status);
+    }
+
+    #[test]
+    fn test_message_status_to_string() {
+        assert_eq!(MessageStatus::Sent.to_string(), "sent");
+        assert_eq!(MessageStatus::Delivered.to_string(), "delivered");
+        assert_eq!(MessageStatus::Read.to_string(), "read");
+    }
+
+    #[test]
+    fn test_message_status_from_string() {
+        assert_eq!(MessageStatus::from("sent".to_string()), MessageStatus::Sent);
+        assert_eq!(MessageStatus::from("delivered".to_string()), MessageStatus::Delivered);
+        assert_eq!(MessageStatus::from("read".to_string()), MessageStatus::Read);
+        assert_eq!(MessageStatus::from("unknown".to_string()), MessageStatus::Sent); // default
+    }
+
+    #[test]
+    fn test_file_status_to_string() {
+        assert_eq!(FileStatus::Pending.to_string(), "pending");
+        assert_eq!(FileStatus::InProgress.to_string(), "in_progress");
+        assert_eq!(FileStatus::Complete.to_string(), "complete");
+        assert_eq!(FileStatus::Failed.to_string(), "failed");
+    }
+
+    #[test]
+    fn test_file_status_from_string() {
+        assert_eq!(FileStatus::from("pending".to_string()), FileStatus::Pending);
+        assert_eq!(FileStatus::from("in_progress".to_string()), FileStatus::InProgress);
+        assert_eq!(FileStatus::from("complete".to_string()), FileStatus::Complete);
+        assert_eq!(FileStatus::from("failed".to_string()), FileStatus::Failed);
+        assert_eq!(FileStatus::from("unknown".to_string()), FileStatus::Pending); // default
+    }
+
+    #[test]
+    fn test_add_and_get_devices() {
+        let db = create_temp_db();
+        let device = Device {
+            id: "device1".to_string(),
+            name: "Device 1".to_string(),
+            address: "AA:BB:CC:DD:EE:FF".to_string(),
+            trusted: true,
+            last_seen: Utc::now(),
+            fingerprint: "fp1".to_string(),
+        };
+
+        db.add_device(&device).unwrap();
+        let devices = db.get_devices().unwrap();
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, device.id);
+        assert_eq!(devices[0].name, device.name);
+        assert_eq!(devices[0].address, device.address);
+        assert_eq!(devices[0].trusted, device.trusted);
+        assert_eq!(devices[0].fingerprint, device.fingerprint);
+    }
+
+    #[test]
+    fn test_add_and_get_messages() {
+        let db = create_temp_db();
+        let message = Message {
+            id: Uuid::new_v4().to_string(),
+            conversation_id: "conv1".to_string(),
+            sender_id: "sender1".to_string(),
+            receiver_id: "receiver1".to_string(),
+            content: b"Hello".to_vec(),
+            timestamp: Utc::now(),
+            status: MessageStatus::Sent,
+        };
+
+        db.add_message(&message).unwrap();
+        let messages = db.get_messages("conv1").unwrap();
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].id, message.id);
+        assert_eq!(messages[0].conversation_id, message.conversation_id);
+        assert_eq!(messages[0].sender_id, message.sender_id);
+        assert_eq!(messages[0].receiver_id, message.receiver_id);
+        assert_eq!(messages[0].content, message.content);
+        assert_eq!(messages[0].status, message.status);
+    }
+
+    #[test]
+    fn test_add_and_get_files() {
+        let db = create_temp_db();
+        let file = File {
+            id: Uuid::new_v4().to_string(),
+            sender_id: "sender1".to_string(),
+            receiver_id: "receiver1".to_string(),
+            filename: "test.txt".to_string(),
+            size: 100,
+            checksum: "checksum".to_string(),
+            path: "/tmp/test.txt".to_string(),
+            timestamp: Utc::now(),
+            status: FileStatus::Pending,
+        };
+
+        db.add_file(&file).unwrap();
+        let files = db.get_files().unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, file.id);
+        assert_eq!(files[0].sender_id, file.sender_id);
+        assert_eq!(files[0].receiver_id, file.receiver_id);
+        assert_eq!(files[0].filename, file.filename);
+        assert_eq!(files[0].size, file.size);
+        assert_eq!(files[0].checksum, file.checksum);
+        assert_eq!(files[0].path, file.path);
+        assert_eq!(files[0].status, file.status);
+    }
+
+    #[test]
+    fn test_update_file_status() {
+        let db = create_temp_db();
+        let mut file = File {
+            id: Uuid::new_v4().to_string(),
+            sender_id: "sender1".to_string(),
+            receiver_id: "receiver1".to_string(),
+            filename: "test.txt".to_string(),
+            size: 100,
+            checksum: "checksum".to_string(),
+            path: "/tmp/test.txt".to_string(),
+            timestamp: Utc::now(),
+            status: FileStatus::Pending,
+        };
+
+        db.add_file(&file).unwrap();
+        db.update_file_status(&file.id, FileStatus::Complete).unwrap();
+
+        let files = db.get_files().unwrap();
+        assert_eq!(files[0].status, FileStatus::Complete);
+    }
+}

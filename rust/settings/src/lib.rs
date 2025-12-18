@@ -153,3 +153,55 @@ impl SettingsManager {
         self.save()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_settings_default() {
+        let settings = AppSettings::default();
+        assert!(!settings.user_name.is_empty() || settings.user_name.is_empty()); // can be empty
+        assert_eq!(settings.theme, "light");
+        assert!(settings.download_path.ends_with("Downloads") || settings.download_path == "/tmp");
+        assert!(settings.encryption_enabled);
+        assert_eq!(settings.auto_lock_timeout, 5);
+        assert!(!settings.biometric_auth_enabled);
+        assert!(!settings.two_factor_enabled);
+        assert_eq!(settings.language, "en");
+        assert!(settings.notifications_enabled);
+        assert!(settings.auto_update_enabled);
+        assert!(settings.profile_picture_path.is_empty());
+        assert!(settings.email.is_empty());
+        assert!(settings.first_run);
+        assert!(settings.trusted_devices.is_empty());
+    }
+
+    #[test]
+    fn test_app_settings_serialization() {
+        let mut settings = AppSettings::default();
+        settings.user_name = "Test User".to_string();
+        settings.theme = "dark".to_string();
+        settings.trusted_devices = vec!["device1".to_string(), "device2".to_string()];
+
+        let json = serde_json::to_string(&settings).unwrap();
+        let deserialized: AppSettings = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.user_name, "Test User");
+        assert_eq!(deserialized.theme, "dark");
+        assert_eq!(deserialized.trusted_devices, vec!["device1".to_string(), "device2".to_string()]);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_settings() {
+        let settings = AppSettings::default();
+        let data = serde_json::to_vec(&settings).unwrap();
+        let key = b"01234567890123456789012345678901";
+
+        let encrypted = bluebeam_crypto::encrypt_data(key, &data).unwrap();
+        let decrypted = bluebeam_crypto::decrypt_data(key, &encrypted).unwrap();
+
+        let deserialized: AppSettings = serde_json::from_slice(&decrypted).unwrap();
+        assert_eq!(deserialized.theme, settings.theme);
+    }
+}

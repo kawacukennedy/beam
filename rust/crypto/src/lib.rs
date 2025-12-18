@@ -105,3 +105,78 @@ pub extern "C" fn crypto_decrypt(data: *const u8, len: usize, out: *mut u8) -> i
         Err(_) => -1,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_keypair_generate() {
+        let keypair = KeyPair::generate();
+        assert_eq!(keypair.public_key.as_bytes().len(), 32);
+        assert_eq!(keypair.secret_key.as_bytes().len(), 32);
+    }
+
+    #[test]
+    fn test_compute_shared_secret() {
+        let alice = KeyPair::generate();
+        let bob = KeyPair::generate();
+
+        let alice_secret = compute_shared_secret(&alice.secret_key, &bob.public_key);
+        let bob_secret = compute_shared_secret(&bob.secret_key, &alice.public_key);
+
+        assert_eq!(alice_secret, bob_secret);
+    }
+
+    #[test]
+    fn test_generate_fingerprint() {
+        let keypair = KeyPair::generate();
+        let fingerprint = generate_fingerprint(&keypair.public_key);
+        assert_eq!(fingerprint.len(), 8); // base64 of 6 bytes is 8 chars
+        // Check it's valid base64
+        base64::decode(&fingerprint).unwrap();
+    }
+
+    #[test]
+    fn test_generate_pin_from_fingerprint() {
+        let fingerprint = "ABCDEFGH";
+        let pin = generate_pin_from_fingerprint(fingerprint);
+        assert_eq!(pin.len(), 6);
+        for c in pin.chars() {
+            assert!(c.is_ascii_digit());
+        }
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_data() {
+        let key = [42u8; 32];
+        let data = b"Hello, world!";
+
+        let encrypted = encrypt_data(&key, data).unwrap();
+        assert_ne!(encrypted, data);
+
+        let decrypted = decrypt_data(&key, &encrypted).unwrap();
+        assert_eq!(decrypted, data);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_wrong_key() {
+        let key1 = [1u8; 32];
+        let key2 = [2u8; 32];
+        let data = b"Secret message";
+
+        let encrypted = encrypt_data(&key1, data).unwrap();
+        let result = decrypt_data(&key2, &encrypted);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_empty_data() {
+        let key = [0u8; 32];
+        let data = b"";
+
+        let encrypted = encrypt_data(&key, data).unwrap();
+        let decrypted = decrypt_data(&key, &encrypted).unwrap();
+        assert_eq!(decrypted, data);
+    }
+}

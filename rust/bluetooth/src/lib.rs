@@ -34,3 +34,17 @@ pub enum BluetoothError {
 }
 
 pub type Result<T> = std::result::Result<T, BluetoothError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bluetooth_error_display() {
+        let err = BluetoothError::NotSupported;
+        assert_eq!(format!("{}", err), "Bluetooth not supported on this platform");
+
+        let err = BluetoothError::DeviceNotFound { device_id: "test".to_string() };
+        assert_eq!(format!("{}", err), "Device not found: test");
+    }
+}
