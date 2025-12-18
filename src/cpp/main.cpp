@@ -6,9 +6,19 @@
 #include "file_transfer/file_transfer.h"
 #include "settings/settings.h"
 #include "auto_update/auto_update.h"
-#include "ui/ui.h"
 #include <thread>
 #include <chrono>
+
+#ifdef __APPLE__
+#include "ui/macos/ui_macos.h"
+typedef MacUI UIImpl;
+#elif _WIN32
+#include "ui/windows/ui_windows.h"
+typedef WindowsUI UIImpl;
+#else
+#include "ui/linux/ui_linux.h"
+typedef LinuxUI UIImpl;
+#endif
 
 int main(int argc, char* argv[]) {
     std::cout << "BlueBeam starting..." << std::endl;
@@ -20,7 +30,7 @@ int main(int argc, char* argv[]) {
     FileTransfer file_transfer(crypto);
     Settings settings;
     AutoUpdate auto_update;
-    UI ui;
+    UIImpl ui;
 
     // Integrate with bluetooth
     bluetooth.set_receive_callback([&messaging, &file_transfer](const std::string& device_id, const std::vector<uint8_t>& data) {

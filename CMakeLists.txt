@@ -25,6 +25,14 @@ find_package(Threads REQUIRED)
 # Rust integration
 include(ExternalProject)
 ExternalProject_Add(
+    rust_core
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/core
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND cargo build --release
+    INSTALL_COMMAND ""
+    BUILD_IN_SOURCE 1
+)
+ExternalProject_Add(
     rust_crypto
     SOURCE_DIR ${CMAKE_SOURCE_DIR}/src/rust/crypto
     CONFIGURE_COMMAND ""
@@ -81,17 +89,20 @@ if(APPLE)
     find_library(COREBLUETOOTH CoreBluetooth REQUIRED)
     find_library(SECURITY Security REQUIRED)
     find_package(OpenSSL REQUIRED)
-    add_executable(BlueBeam src/cpp/main.cpp src/ui/macos/ui_macos.mm)
-    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} database crypto bluetooth messaging file_transfer settings auto_update)
+    add_executable(BlueBeam src/cpp/main.cpp src/cpp/ui/macos/ui_macos.mm)
+    add_dependencies(BlueBeam rust_core)
+    target_link_libraries(BlueBeam ${COCOA} ${COREBLUETOOTH} ${SECURITY} ${OPENSSL_CRYPTO_LIBRARY} ${CMAKE_SOURCE_DIR}/src/rust/core/target/release/libbluebeam_core.a database crypto bluetooth messaging file_transfer settings auto_update)
 elseif(WIN32)
-    add_executable(BlueBeam src/cpp/main.cpp src/ui/windows/ui_windows.cpp)
-    target_link_libraries(BlueBeam database crypto bluetooth messaging file_transfer)
+    add_executable(BlueBeam src/cpp/main.cpp src/cpp/ui/windows/ui_windows.cpp)
+    add_dependencies(BlueBeam rust_core)
+    target_link_libraries(BlueBeam ${CMAKE_SOURCE_DIR}/src/rust/core/target/release/libbluebeam_core.a database crypto bluetooth messaging file_transfer)
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK4 REQUIRED gtk4)
-    add_executable(BlueBeam src/cpp/main.cpp src/ui/linux/ui_linux.cpp)
+    add_executable(BlueBeam src/cpp/main.cpp src/cpp/ui/linux/ui_linux.cpp)
+    add_dependencies(BlueBeam rust_core)
     target_include_directories(BlueBeam PRIVATE ${GTK4_INCLUDE_DIRS})
-    target_link_libraries(BlueBeam ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
+    target_link_libraries(BlueBeam ${CMAKE_SOURCE_DIR}/src/rust/core/target/release/libbluebeam_core.a ${GTK4_LIBRARIES} database crypto bluetooth messaging file_transfer)
 endif()
 
 # Install
