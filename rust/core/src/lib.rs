@@ -146,3 +146,252 @@ mod tests {
         assert_eq!(ErrorCode::SettingsLoadFailed as u32, 5000);
     }
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use bluebeam_bluetooth::{device::Device, connection::Connection, transport::Transport, manager::BluetoothManager};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    use std::collections::HashMap;
+    use x25519_dalek::PublicKey;
+
+    // Mock implementations for testing
+    struct MockDevice {
+        id: String,
+        name: Option<String>,
+        address: String,
+    }
+
+    impl MockDevice {
+        fn new(id: String, name: Option<String>, address: String) -> Self {
+            MockDevice { id, name, address }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Device for MockDevice {
+        fn id(&self) -> String { self.id.clone() }
+        fn name(&self) -> Option<String> { self.name.clone() }
+        fn address(&self) -> String { self.address.clone() }
+    }
+
+    struct MockTransport {
+        sender: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        receiver: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+        inject_sender: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    }
+
+    impl MockTransport {
+        fn new() -> (Self, tokio::sync::mpsc::UnboundedSender<Vec<u8>>) {
+            let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, rx2) = tokio::sync::mpsc::unbounded_channel();
+            (MockTransport { sender: tx1, receiver: rx2, inject_sender: tx2 }, rx1)
+        }
+
+        fn inject_data(&self, data: Vec<u8>) {
+            self.inject_sender.send(data).unwrap();
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Transport for MockTransport {
+        async fn send(&self, data: &[u8]) -> bluebeam_bluetooth::Result<()> {
+            self.sender.send(data.to_vec()).unwrap();
+            Ok(())
+        }
+
+        async fn receive(&self) -> bluebeam_bluetooth::Result<Vec<u8>> {
+            match self.receiver.recv().await {
+                Some(data) => Ok(data),
+                None => Ok(vec![]),
+            }
+        }
+    }
+
+    struct MockConnection {
+        transport: Arc<dyn Transport>,
+    }
+
+    impl MockConnection {
+        fn new(transport: Arc<dyn Transport>) -> Self {
+            MockConnection { transport }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Connection for MockConnection {
+        async fn create_transport(&self, _service_uuid: uuid::Uuid) -> bluebeam_bluetooth::Result<Arc<dyn Transport>> {
+            Ok(self.transport.clone())
+        }
+    }
+
+    struct MockBluetoothManager {
+        devices: Vec<Arc<dyn Device>>,
+        connections: Arc<Mutex<HashMap<String, Arc<dyn Connection>>>>,
+        inject_senders: Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>>,
+    }
+
+    impl MockBluetoothManager {
+        fn new() -> Self {
+            MockBluetoothManager {
+                devices: vec![],
+                connections: Arc::new(Mutex::new(HashMap::new())),
+                inject_senders: Arc::new(Mutex::new(HashMap::new())),
+            }
+        }
+
+        fn add_device(&mut self, device: Arc<dyn Device>) {
+            self.devices.push(device);
+        }
+
+        fn get_inject_sender(&self, device_id: &str) -> Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>> {
+            let senders = self.inject_senders.try_lock().ok()?;
+            senders.get(device_id).cloned()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BluetoothManager for MockBluetoothManager {
+        async fn start_discovery(&self) -> bluebeam_bluetooth::Result<()> {
+            Ok(())
+        }
+
+        async fn stop_discovery(&self) -> bluebeam_bluetooth::Result<()> {
+            Ok(())
+        }
+
+        fn discovered_devices(&self) -> Vec<Arc<dyn Device>> {
+            self.devices.clone()
+        }
+
+        async fn connect(&self, device: &dyn Device) -> bluebeam_bluetooth::Result<Arc<dyn Connection>> {
+            let (transport, inject_rx) = MockTransport::new();
+            let connection = Arc::new(MockConnection::new(Arc::new(transport)));
+            let mut conns = self.connections.lock().await;
+            conns.insert(device.id(), connection.clone());
+            let mut senders = self.inject_senders.lock().await;
+            senders.insert(device.id(), inject_rx);
+            Ok(connection)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pairing_integration() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = bluebeam_database::Database::new("test_key").unwrap();
+        let settings = bluebeam_settings::SettingsManager::new().unwrap();
+
+        let mut mock_manager = MockBluetoothManager::new();
+        let device = Arc::new(MockDevice::new("test_device".to_string(), Some("Test Device".to_string()), "00:11:22:33:44:55".to_string()));
+        mock_manager.add_device(device.clone());
+
+        let core = Core {
+            db: Mutex::new(db),
+            bluetooth_manager: Some(Arc::new(mock_manager)),
+            settings: Mutex::new(settings),
+        };
+
+        // Test discovery
+        core.start_discovery().await.unwrap();
+        let devices = core.get_discovered_devices();
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id(), "test_device");
+
+        // Test initiate pairing
+        let session = core.initiate_pairing(device).await.unwrap();
+        assert_eq!(session.get_device_info().0, "test_device");
+
+        // Test exchange keys (mock the remote response)
+        let inject_sender = mock_manager.get_inject_sender("test_device").unwrap();
+        let remote_key = PublicKey::from([0u8; 32]);
+        inject_sender.send(remote_key.as_bytes().to_vec()).unwrap();
+
+        session.exchange_keys().await.unwrap();
+        let pin = session.get_pin().unwrap();
+        assert!(!pin.is_empty());
+
+        // Test verify pin
+        let verified = session.verify_pin(&pin).await.unwrap();
+        assert!(verified);
+
+        // Test complete pairing
+        inject_sender.send(b"PAIRING_COMPLETE".to_vec()).unwrap();
+        session.complete_pairing().await.unwrap();
+
+        // Test complete pairing in core
+        core.complete_pairing(&session, true).await.unwrap();
+
+        // Check device added
+        let devices = core.get_devices().unwrap();
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, "test_device");
+        assert!(devices[0].trusted);
+    }
+
+    #[test]
+    fn test_messaging_integration() {
+        let db = bluebeam_database::Database::new("test_key").unwrap();
+        let settings = bluebeam_settings::SettingsManager::new().unwrap();
+
+        let core = Core {
+            db: Mutex::new(db),
+            bluetooth_manager: None,
+            settings: Mutex::new(settings),
+        };
+
+        let message = Message {
+            id: "msg1".to_string(),
+            conversation_id: "conv1".to_string(),
+            sender_id: "sender".to_string(),
+            receiver_id: "receiver".to_string(),
+            content: b"Hello".to_vec(),
+            timestamp: Utc::now(),
+            status: MessageStatus::Sent,
+        };
+
+        core.add_message(&message).unwrap();
+
+        let messages = core.get_messages("conv1").unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].id, "msg1");
+        assert_eq!(messages[0].content, b"Hello");
+    }
+
+    #[test]
+    fn test_file_transfer_integration() {
+        let db = bluebeam_database::Database::new("test_key").unwrap();
+        let settings = bluebeam_settings::SettingsManager::new().unwrap();
+
+        let core = Core {
+            db: Mutex::new(db),
+            bluetooth_manager: None,
+            settings: Mutex::new(settings),
+        };
+
+        let file = File {
+            id: "file1".to_string(),
+            sender_id: "sender".to_string(),
+            receiver_id: "receiver".to_string(),
+            filename: "test.txt".to_string(),
+            size: 100,
+            checksum: "checksum".to_string(),
+            path: "/tmp/test.txt".to_string(),
+            timestamp: Utc::now(),
+            status: FileStatus::Pending,
+        };
+
+        core.add_file(&file).unwrap();
+
+        let files = core.get_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].id, "file1");
+        assert_eq!(files[0].status, FileStatus::Pending);
+
+        core.update_file_status("file1", FileStatus::Complete).unwrap();
+
+        let files = core.get_files().unwrap();
+        assert_eq!(files[0].status, FileStatus::Complete);
+    }
+}
