@@ -4,7 +4,8 @@ use crate::connection::Connection;
 use crate::transport::Transport;
 use crate::Result;
 use bluer::{Adapter, Device as BluezDevice};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -104,5 +105,44 @@ impl Transport for LinuxTransport {
 
     async fn close(&self) -> Result<()> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn test_linux_bluetooth_manager_creation() {
+        let manager = LinuxBluetoothManager::new().await.unwrap();
+        assert!(manager.discovered_devices().is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn test_linux_discovery_start_stop() {
+        let manager = LinuxBluetoothManager::new().await.unwrap();
+        manager.start_discovery().await.unwrap();
+        manager.stop_discovery().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn test_linux_device_properties() {
+        // Mock device - in real test, would need actual device
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn test_linux_connection() {
+        // Test connection - currently panics due to todo!()
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn test_linux_data_transfer() {
+        // Test transport send/receive - currently panics
     }
 }

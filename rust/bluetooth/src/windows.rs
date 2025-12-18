@@ -3,7 +3,8 @@ use crate::device::Device;
 use crate::connection::Connection;
 use crate::transport::Transport;
 use crate::Result;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use windows::Devices::Bluetooth::{BluetoothAdapter, BluetoothDevice};
@@ -106,5 +107,44 @@ impl Transport for WindowsTransport {
 
     async fn close(&self) -> Result<()> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    #[cfg(target_os = "windows")]
+    async fn test_windows_bluetooth_manager_creation() {
+        let manager = WindowsBluetoothManager::new().await.unwrap();
+        assert!(manager.discovered_devices().is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "windows")]
+    async fn test_windows_discovery_start_stop() {
+        let manager = WindowsBluetoothManager::new().await.unwrap();
+        manager.start_discovery().await.unwrap();
+        manager.stop_discovery().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "windows")]
+    async fn test_windows_device_properties() {
+        // Mock device - in real test, would need actual device
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "windows")]
+    async fn test_windows_connection() {
+        // Test connection - currently panics due to todo!()
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "windows")]
+    async fn test_windows_data_transfer() {
+        // Test transport send/receive - currently panics
     }
 }

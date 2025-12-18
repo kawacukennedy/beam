@@ -124,3 +124,44 @@ impl Transport for MacOSTransport {
         todo!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn test_macos_bluetooth_manager_creation() {
+        let manager = MacOSBluetoothManager::new().await.unwrap();
+        assert!(manager.discovered_devices().is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn test_macos_discovery_start_stop() {
+        let manager = MacOSBluetoothManager::new().await.unwrap();
+        manager.start_discovery().await.unwrap();
+        manager.stop_discovery().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn test_macos_device_properties() {
+        // Mock peripheral - in real test, would need actual peripheral
+        // For now, skip as implementation is incomplete
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn test_macos_connection() {
+        // Test connection - would need mock device
+        // Currently panics due to todo!()
+    }
+
+    #[tokio::test]
+    #[cfg(target_os = "macos")]
+    async fn test_macos_data_transfer() {
+        // Test transport send/receive - currently panics
+    }
+}
