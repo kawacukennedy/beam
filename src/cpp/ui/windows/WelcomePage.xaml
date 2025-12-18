@@ -1,0 +1,16 @@
+<Page
+    x:Class="BlueBeam.WelcomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:BlueBeam"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <Grid Background="{StaticResource BackgroundLightBrush}">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="16">
+            <TextBlock Style="{StaticResource H1Style}" Text="Welcome to BlueBeam" HorizontalAlignment="Center" AutomationProperties.Name="Welcome title" />
+            <TextBlock Style="{StaticResource BodyStyle}" Text="Secure offline messaging and file transfer." HorizontalAlignment="Center" AutomationProperties.Name="Welcome description" />
+            <Button x:Name="PermissionButton" Content="Grant Bluetooth Permission" Background="{StaticResource AccentBrush}" HorizontalAlignment="Center" Click="PermissionButton_Click" AutomationProperties.Name="Grant Bluetooth permission button" TabIndex="0" />
+        </StackPanel>
+    </Grid>
+</Page>

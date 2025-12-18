@@ -1,0 +1,26 @@
+<Page
+    x:Class="BlueBeam.DeviceDiscoveryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:BlueBeam"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <Grid Background="{StaticResource BackgroundLightBrush}">
+        <StackPanel Spacing="16" Margin="16">
+            <TextBlock Style="{StaticResource H2Style}" Text="Device Discovery" AutomationProperties.Name="Device discovery title" />
+            <Button x:Name="RefreshButton" Content="Refresh" Background="{StaticResource PrimaryBrush}" Click="RefreshButton_Click" AutomationProperties.Name="Refresh devices button" TabIndex="0" />
+            <ListView x:Name="DeviceList" ItemsSource="{x:Bind Devices}" AutomationProperties.Name="List of discovered devices" TabIndex="1">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Name}" Style="{StaticResource BodyStyle}" />
+                            <Button Content="Pair" Click="PairButton_Click" Background="{StaticResource AccentBrush}" AutomationProperties.Name="Pair with device button" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <TextBlock x:Name="StatusText" Style="{StaticResource BodyStyle}" AutomationProperties.Name="Discovery status" />
+        </StackPanel>
+    </Grid>
+</Page>

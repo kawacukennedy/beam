@@ -1,0 +1,55 @@
+<Application
+    x:Class="BlueBeam.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:BlueBeam">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- Colors -->
+            <SolidColorBrush x:Key="PrimaryBrush" Color="#2563EB" />
+            <SolidColorBrush x:Key="SecondaryBrush" Color="#1E40AF" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#7C3AED" />
+            <SolidColorBrush x:Key="BackgroundLightBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="BackgroundDarkBrush" Color="#0F172A" />
+            <SolidColorBrush x:Key="SurfaceLightBrush" Color="#F1F5F9" />
+            <SolidColorBrush x:Key="SurfaceDarkBrush" Color="#111827" />
+            <SolidColorBrush x:Key="TextPrimaryLightBrush" Color="#020617" />
+            <SolidColorBrush x:Key="TextPrimaryDarkBrush" Color="#F8FAFC" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#16A34A" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#F59E0B" />
+            <SolidColorBrush x:Key="ErrorBrush" Color="#DC2626" />
+            <SolidColorBrush x:Key="InfoBrush" Color="#0EA5E9" />
+            <!-- Typography -->
+            <Style x:Key="H1Style" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="32" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="H2Style" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="24" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="H3Style" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="20" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="BodyStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="16" />
+            </Style>
+            <Style x:Key="CaptionStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+            <!-- Animations -->
+            <Storyboard x:Key="FadeInStoryboard">
+                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.24" />
+            </Storyboard>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

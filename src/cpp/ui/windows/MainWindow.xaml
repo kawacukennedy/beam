@@ -1,0 +1,23 @@
+<Window
+    x:Class="BlueBeam.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:BlueBeam"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="BlueBeam">
+    <Grid>
+        <NavigationView x:Name="NavView" IsBackButtonVisible="Collapsed" PaneDisplayMode="Left" OpenPaneLength="200">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Icon="Home" Content="Welcome" Tag="welcome" AutomationProperties.Name="Welcome screen" />
+                <NavigationViewItem Icon="Find" Content="Discover" Tag="discovery" AutomationProperties.Name="Device discovery screen" />
+                <NavigationViewItem Icon="People" Content="Pairing" Tag="pairing" AutomationProperties.Name="Device pairing screen" />
+                <NavigationViewItem Icon="Message" Content="Chat" Tag="chat" AutomationProperties.Name="Chat screen" />
+                <NavigationViewItem Icon="OpenFile" Content="Transfer" Tag="transfer" AutomationProperties.Name="File transfer screen" />
+                <NavigationViewItem Icon="Setting" Content="Settings" Tag="settings" AutomationProperties.Name="Settings screen" />
+            </NavigationView.MenuItems>
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+    </Grid>
+</Window>
