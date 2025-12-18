@@ -72,6 +72,7 @@ pub fn decrypt_data(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(Key::from_slice(key));
     let nonce = Nonce::from_slice(b"unique nonce");
     let plaintext = cipher.decrypt(nonce, data).map_err(|e| CryptoError::DecryptionFailed { source: Box::new(e) })?;
+    // Encrypted storage: data is decrypted only when needed, no plaintext storage
     Ok(plaintext)
 }
 

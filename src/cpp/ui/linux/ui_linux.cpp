@@ -114,6 +114,13 @@ void LinuxUI::create_pairing_screen() {
     gtk_stack_add_named(GTK_STACK(stack), pairing_screen, "pairing");
 }
 
+void LinuxUI::set_pairing_pin(const std::string& pin) {
+    if (pin_label) {
+        std::string text = "PIN: " + pin;
+        gtk_label_set_text(pin_label, text.c_str());
+    }
+}
+
 void LinuxUI::create_chat_screen() {
     chat_screen = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
     gtk_widget_set_name(chat_screen, "chat");

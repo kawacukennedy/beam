@@ -25,4 +25,9 @@ namespace winrt::BlueBeam::implementation
             frame.Navigate(xaml_typename<ChatPage>());
         }
     }
+
+    void PairingPage::SetPin(const std::string& pin) {
+        std::wstring wpin(pin.begin(), pin.end());
+        PinDisplay().Text(L"PIN: " + wpin);
+    }
 }

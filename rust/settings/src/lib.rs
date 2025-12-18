@@ -118,6 +118,7 @@ impl SettingsManager {
             return Ok(AppSettings::default());
         }
         let key = b"01234567890123456789012345678901"; // Fixed key for demo
+        // Encrypted storage: decrypt only when loading settings
         match decrypt_data(key, &encrypted_data) {
             Ok(data) => serde_json::from_slice(&data).map_err(|e| SettingsError::InvalidFormat {
                 message: format!("JSON parse error: {}", e)

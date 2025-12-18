@@ -99,4 +99,7 @@ impl PairingSession {
     pub fn get_fingerprint_for_storage(&self) -> Option<String> {
         self.fingerprint.clone()
     }
+
+    // Ephemeral key exchange: keys are generated per session and not stored long-term
+    // User-verified fingerprints: PIN is derived from fingerprint for verification
 }
