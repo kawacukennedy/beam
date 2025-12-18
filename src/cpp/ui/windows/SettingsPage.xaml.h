@@ -6,7 +6,8 @@ namespace winrt::BlueBeam::implementation
     struct SettingsPage : SettingsPageT<SettingsPage>
     {
         SettingsPage();
-        void SecurityButton_Click(IInspectable const& sender, RoutedEventArgs const& e);
+        void LoadSettings();
+        void SaveButton_Click(IInspectable const& sender, RoutedEventArgs const& e);
     };
 }
 

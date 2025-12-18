@@ -9,9 +9,23 @@
     <Grid Background="{StaticResource BackgroundLightBrush}">
         <StackPanel Spacing="16" Margin="16">
             <TextBlock Style="{StaticResource H2Style}" Text="Settings" AutomationProperties.Name="Settings title" />
-            <ToggleSwitch x:Name="DarkModeToggle" Header="Dark Mode" AutomationProperties.Name="Dark mode toggle" TabIndex="0" />
-            <ToggleSwitch x:Name="NotificationsToggle" Header="Notifications" AutomationProperties.Name="Notifications toggle" TabIndex="1" />
-            <Button x:Name="SecurityButton" Content="Security Options" Background="{StaticResource SecondaryBrush}" Click="SecurityButton_Click" AutomationProperties.Name="Security options button" TabIndex="2" />
+            <TextBox x:Name="UserNameBox" Header="User Name" AutomationProperties.Name="User name box" TabIndex="0" />
+            <ComboBox x:Name="ThemeCombo" Header="Theme" AutomationProperties.Name="Theme combo" TabIndex="1">
+                <ComboBoxItem Content="Light" />
+                <ComboBoxItem Content="Dark" />
+                <ComboBoxItem Content="High Contrast" />
+            </ComboBox>
+            <TextBox x:Name="DownloadPathBox" Header="Download Path" AutomationProperties.Name="Download path box" TabIndex="2" />
+            <ToggleSwitch x:Name="EncryptionToggle" Header="Encryption Enabled" AutomationProperties.Name="Encryption toggle" TabIndex="3" />
+            <TextBox x:Name="AutoLockBox" Header="Auto Lock Timeout (minutes)" AutomationProperties.Name="Auto lock box" TabIndex="4" />
+            <ToggleSwitch x:Name="BiometricToggle" Header="Biometric Auth" AutomationProperties.Name="Biometric toggle" TabIndex="5" />
+            <ToggleSwitch x:Name="TwoFactorToggle" Header="Two Factor Auth" AutomationProperties.Name="Two factor toggle" TabIndex="6" />
+            <TextBox x:Name="LanguageBox" Header="Language" AutomationProperties.Name="Language box" TabIndex="7" />
+            <ToggleSwitch x:Name="NotificationsToggle" Header="Notifications" AutomationProperties.Name="Notifications toggle" TabIndex="8" />
+            <ToggleSwitch x:Name="AutoUpdateToggle" Header="Auto Update" AutomationProperties.Name="Auto update toggle" TabIndex="9" />
+            <TextBox x:Name="ProfilePicBox" Header="Profile Picture Path" AutomationProperties.Name="Profile pic box" TabIndex="10" />
+            <TextBox x:Name="EmailBox" Header="Email" AutomationProperties.Name="Email box" TabIndex="11" />
+            <Button x:Name="SaveButton" Content="Save" Background="{StaticResource PrimaryBrush}" Click="SaveButton_Click" AutomationProperties.Name="Save button" TabIndex="12" />
         </StackPanel>
     </Grid>
 </Page>
