@@ -17,6 +17,10 @@ public:
     std::vector<uint8_t> decrypt_message(const std::string& session_id, const std::vector<uint8_t>& data);
     std::string calculate_checksum(const std::vector<uint8_t>& data);
 
+    // Secure key storage
+    void store_secure_key(const std::string& key_name, const std::vector<uint8_t>& key);
+    std::vector<uint8_t> retrieve_secure_key(const std::string& key_name);
+
 private:
     class Impl;
     std::unique_ptr<Impl> pimpl;

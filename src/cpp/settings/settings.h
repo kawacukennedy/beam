@@ -35,6 +35,11 @@ public:
     void save();
     void load();
 
+    // Filesystem paths
+    std::string get_app_data_path();
+    std::string get_temp_path();
+    std::string get_documents_path();
+
 private:
     class Impl;
     std::unique_ptr<Impl> pimpl;

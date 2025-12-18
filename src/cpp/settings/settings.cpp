@@ -17,6 +17,9 @@
 #include <glib/gkeyfile.h>
 #endif
 
+#include <filesystem>
+namespace fs = std::filesystem;
+
 class Settings::Impl {
 public:
     std::map<std::string, std::string> string_settings;
@@ -163,3 +166,55 @@ bool Settings::is_first_run() { return pimpl->bool_settings["first_run"]; }
 
 void Settings::save() { pimpl->save(); }
 void Settings::load() { pimpl->load(); }
+
+std::string Settings::get_app_data_path() {
+#if defined(__APPLE__)
+    // Use ~/Library/Application Support/BlueBeam
+    return std::string(getenv("HOME")) + "/Library/Application Support/BlueBeam";
+#elif defined(_WIN32)
+    char path[MAX_PATH];
+    if (SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, path) == S_OK) {
+        return std::string(path) + "\\BlueBeam";
+    }
+    return "";
+#elif defined(__linux__)
+    const char* config_dir = getenv("XDG_DATA_HOME");
+    if (config_dir) {
+        return std::string(config_dir) + "/bluebeam";
+    } else {
+        return std::string(getenv("HOME")) + "/.local/share/bluebeam";
+    }
+#endif
+    return "";
+}
+
+std::string Settings::get_temp_path() {
+#if defined(__APPLE__) || defined(__linux__)
+    return "/tmp";
+#elif defined(_WIN32)
+    char path[MAX_PATH];
+    GetTempPathA(MAX_PATH, path);
+    return std::string(path);
+#endif
+    return "";
+}
+
+std::string Settings::get_documents_path() {
+#if defined(__APPLE__)
+    return std::string(getenv("HOME")) + "/Documents";
+#elif defined(_WIN32)
+    char path[MAX_PATH];
+    if (SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, path) == S_OK) {
+        return std::string(path);
+    }
+    return "";
+#elif defined(__linux__)
+    const char* docs_dir = getenv("XDG_DOCUMENTS_DIR");
+    if (docs_dir) {
+        return std::string(docs_dir);
+    } else {
+        return std::string(getenv("HOME")) + "/Documents";
+    }
+#endif
+    return "";
+}
