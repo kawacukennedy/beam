@@ -12,6 +12,7 @@ BlueBeam is a cross-platform offline peer-to-peer chat and file-sharing applicat
 - [Performance Metrics](#performance-metrics)
 - [Security Compliance](#security-compliance)
 - [Building and Running](#building-and-running)
+- [Documentation](#documentation)
 - [License](#license)
 
 ## Features
@@ -134,6 +135,12 @@ Generates:
 - macOS: `BlueBeam-1.0.0.dmg`
 - Windows: `BlueBeam-1.0.0.exe`
 - Linux: `BlueBeam-1.0.0.AppImage`, `.deb`, `.rpm`
+
+## Documentation
+
+- [User Manual](docs/USER_MANUAL.md) - Installation, setup, and usage guide
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Common issues and solutions
+- Inline code documentation available in source files
 
 ## License
 
